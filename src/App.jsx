@@ -1,8 +1,10 @@
 import { useState } from 'react';
+import { regionData } from './data/navigation';
 import Sidebar from './components/Sidebar';
 import TopBar from './components/TopBar';
 import SubNav from './components/SubNav';
 import ConfirmDialog from './components/ConfirmDialog';
+import ToastHost from './components/ToastHost';
 import YearsView from './components/views/YearsView';
 import RegionsView from './components/views/RegionsView';
 import LocationsView from './components/views/LocationsView';
@@ -14,6 +16,13 @@ export default function App() {
   const [locationInfo, setLocationInfo] = useState({ title: '', meta: '' });
   const [planogramInfo, setPlanogramInfo] = useState({ doorSet: null, regionName: '' });
   const [pendingNav, setPendingNav] = useState(null);
+  const [showArchivedYears, setShowArchivedYears] = useState(false);
+  const [regions, setRegions] = useState(() =>
+    regionData.map((r) => ({
+      ...r,
+      doorSets: r.doorSets.map((ds, i) => ({ ...ds, _id: ds._id || `${r.name}-${i}-${Date.now()}` })),
+    }))
+  );
 
   function doGoHome() {
     setView('years');
@@ -53,7 +62,12 @@ export default function App() {
 
   const breadcrumbs = [];
   if (view === 'years') {
-    breadcrumbs.push({ label: 'Cooler Schematic' });
+    if (showArchivedYears) {
+      breadcrumbs.push({ label: 'Cooler Schematic', onClick: () => setShowArchivedYears(false) });
+      breadcrumbs.push({ label: 'Archived' });
+    } else {
+      breadcrumbs.push({ label: 'Cooler Schematic' });
+    }
   } else if (view === 'regions') {
     breadcrumbs.push({ label: 'Cooler Schematic', onClick: goHome });
     breadcrumbs.push({ label: String(currentYear) });
@@ -74,15 +88,28 @@ export default function App() {
       <main className="flex-1 flex flex-col min-w-0 min-h-0 p-2">
         <div className="flex-1 flex flex-col bg-background-primary border border-grey-200 rounded-lg overflow-hidden">
           <TopBar icon="/assets/GridNine.svg" breadcrumbs={breadcrumbs} />
-          {view === 'years' && <SubNav />}
+          {view === 'years' && (
+            <SubNav
+              showArchived={showArchivedYears}
+              onToggleArchived={() => setShowArchivedYears((v) => !v)}
+            />
+          )}
 
           {/* Content */}
           <div className={`flex-1 ${view === 'planogram' ? 'overflow-hidden min-h-0' : 'overflow-y-auto p-5'}`}>
-            {view === 'years' && <YearsView onSelectYear={goYear} />}
+            {view === 'years' && (
+              <YearsView
+                onSelectYear={goYear}
+                showArchived={showArchivedYears}
+                onExitArchived={() => setShowArchivedYears(false)}
+              />
+            )}
             {view === 'regions' && (
               <RegionsView
                 year={currentYear}
                 onEditPlanogram={goPlanogram}
+                regions={regions}
+                setRegions={setRegions}
               />
             )}
             {view === 'locations' && (
@@ -101,6 +128,8 @@ export default function App() {
           </div>
         </div>
       </main>
+
+      <ToastHost />
 
       <ConfirmDialog
         open={!!pendingNav}

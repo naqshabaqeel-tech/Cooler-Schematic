@@ -112,14 +112,96 @@ const _categories = [
   },
 ];
 
-// Apply widthMultiplier at import time — mirrors EDI / GS1 ingest logic.
+// ─── Glide-based shelf model ──────────────────────────────────────────────────
+// Each shelf is SHELF_WIDTH_INCHES wide. A product occupies a "glide" (lane)
+// equal to its glideWidth in inches. One glide = one facing. Adjacent glides of
+// the same product render as N identical thumbnails side-by-side.
+export const SHELF_WIDTH_INCHES = 30;
+
+// Pack-type categorisation — drives the size filter in the product library and
+// keys into the glide-width table. Single source of truth for both.
+// Order matters: multipack first, then containers by oz.
+export const PACK_TYPES = [
+  'Slim can',
+  'Standard can',
+  'Standard bottle',
+  'Large bottle',
+  '1L bottle',
+  'Share-size bottle',
+  '4-pack',
+  '6-pack',
+  '12-pack',
+  '24-pack',
+];
+
+export function getPackType(productDescription, sizeStr) {
+  const desc = (productDescription || '').toLowerCase();
+  const oz   = parseFloat((sizeStr || '0').replace(/[^\d.]/g, '')) || 0;
+
+  if (/\b24[\s-]?pack\b|\bcase\b/.test(desc)) return '24-pack';
+  if (/\b12[\s-]?pack\b/.test(desc))           return '12-pack';
+  if (/\b6[\s-]?pack\b/.test(desc))            return '6-pack';
+  if (/\b4[\s-]?pack\b/.test(desc))            return '4-pack';
+
+  const isCan    = desc.includes('can');
+  const isBottle = desc.includes('bottle') || desc.includes('glass');
+
+  if (isCan) {
+    if (oz <= 8.4) return 'Slim can';
+    return 'Standard can';
+  }
+  if (isBottle) {
+    if (oz <= 20) return 'Standard bottle';
+    if (oz <= 32) return 'Large bottle';
+    if (oz <= 40) return '1L bottle';
+    return 'Share-size bottle';
+  }
+  // Fallback by oz only
+  if (oz <= 8.4) return 'Slim can';
+  if (oz <= 16)  return 'Standard can';
+  if (oz <= 25)  return 'Standard bottle';
+  if (oz <= 32)  return 'Large bottle';
+  if (oz <= 40)  return '1L bottle';
+  return 'Share-size bottle';
+}
+
+// Glide-width lookup (inches per facing).
+const GLIDE_WIDTH_BY_PACK_TYPE = {
+  'Slim can':           2.5,
+  'Standard can':       2.875,
+  'Standard bottle':    3.125,
+  'Large bottle':       4.0,
+  '1L bottle':          5.0,
+  'Share-size bottle':  6.0,
+  '4-pack':             5.5,
+  '6-pack':             7.5,
+  '12-pack':            9.0,
+  '24-pack':            11.0,
+};
+
+export function getGlideWidth(productDescription, sizeStr) {
+  return GLIDE_WIDTH_BY_PACK_TYPE[getPackType(productDescription, sizeStr)] || 2.875;
+}
+
+// Apply widthMultiplier + packType + glideWidth at import time.
 export const productCategories = _categories.map((cat) => ({
   ...cat,
-  products: cat.products.map((p) => ({
-    ...p,
-    widthMultiplier: getWidthMultiplier(p.name, p.size),
-  })),
+  products: cat.products.map((p) => {
+    const packType = getPackType(p.name, p.size);
+    return {
+      ...p,
+      widthMultiplier: getWidthMultiplier(p.name, p.size),
+      packType,
+      glideWidth: GLIDE_WIDTH_BY_PACK_TYPE[packType] || 2.875,
+    };
+  }),
 }));
+
+// Max facings for a product on a single 30" shelf.
+export function getMaxFacings(product) {
+  if (!product?.glideWidth) return 0;
+  return Math.floor(SHELF_WIDTH_INCHES / product.glideWidth);
+}
 
 // Generate initial empty shelf layout for a door set.
 export function generateShelfLayout(doorCount, shelfCount) {
@@ -129,8 +211,7 @@ export function generateShelfLayout(doorCount, shelfCount) {
     shelves: Array.from({ length: shelfCount }, (_, shelfIdx) => ({
       id: `door-${doorIdx + 1}-shelf-${shelfIdx + 1}`,
       label: `Shelf ${shelfIdx + 1}`,
-      slots: 6,
-      products: [],
+      glides: [], // each entry: { product }
     })),
   }));
 }

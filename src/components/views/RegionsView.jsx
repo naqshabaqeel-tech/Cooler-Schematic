@@ -3,7 +3,8 @@ import Badge from '../Badge';
 import Button from '../Button';
 import Input from '../Input';
 import SidePanel from '../SidePanel';
-import { regionData } from '../../data/navigation';
+import ConfirmDialog from '../ConfirmDialog';
+import { showToast } from '../../lib/toast';
 
 function pad(n) {
   return String(n).padStart(2, '0');
@@ -26,14 +27,7 @@ function DoorStrip({ total, active }) {
   );
 }
 
-const cardMenuItems = [
-  { label: 'Mark Active', icon: '/assets/Edit.svg' },
-  { label: 'Edit', icon: '/assets/Edit.svg' },
-  { label: 'Archive', icon: '/assets/Archive 2.svg' },
-  { label: 'Delete', icon: '/assets/Delete.svg', danger: true },
-];
-
-function CardDotsMenu({ status }) {
+function CardDotsMenu({ items }) {
   const [open, setOpen] = useState(false);
   const ref = useRef(null);
 
@@ -45,15 +39,6 @@ function CardDotsMenu({ status }) {
     document.addEventListener('mousedown', handleClick);
     return () => document.removeEventListener('mousedown', handleClick);
   }, [open]);
-
-  const items = [
-    status === 'active'
-      ? { label: 'Mark Inactive', icon: '/assets/Archive 2.svg' }
-      : { label: 'Mark Active', icon: '/assets/Edit.svg' },
-    { label: 'Edit', icon: '/assets/Edit.svg' },
-    { label: 'Archive', icon: '/assets/Archive 2.svg' },
-    { label: 'Delete', icon: '/assets/Delete.svg', danger: true },
-  ];
 
   return (
     <div className="relative" ref={ref}>
@@ -72,7 +57,7 @@ function CardDotsMenu({ status }) {
           {items.map((item) => (
             <button
               key={item.label}
-              onClick={(e) => { e.stopPropagation(); setOpen(false); }}
+              onClick={(e) => { e.stopPropagation(); setOpen(false); item.onClick?.(); }}
               className={`flex items-center gap-2 w-full px-3 py-2 text-sm font-medium cursor-pointer bg-transparent border-none font-[inherit] hover:bg-gray-50 ${item.danger ? 'text-[#D92D20]' : 'text-gray-900'}`}
             >
               <img src={item.icon} alt="" className="w-4 h-4" />
@@ -113,7 +98,7 @@ function OverrideIcon() {
   );
 }
 
-function DoorSetCard({ ds, onEditPlanogram }) {
+function DoorSetCard({ ds, onEditPlanogram, menuItems }) {
   const statusMap = { active: 'Active', draft: 'Inactive', archive: 'Default' };
   const labelMap = { active: 'Active', draft: 'Draft', archive: 'Archive' };
 
@@ -121,7 +106,7 @@ function DoorSetCard({ ds, onEditPlanogram }) {
     <div className="bg-white border border-gray-200 rounded-xl p-4 flex flex-col gap-3">
       <div className="flex items-start justify-between">
         <span className="text-lg font-semibold text-gray-950">{ds.doors} Doors</span>
-        <CardDotsMenu status={ds.status} />
+        <CardDotsMenu items={menuItems} />
       </div>
 
       <div className="flex items-center gap-2">
@@ -154,39 +139,113 @@ function DoorSetCard({ ds, onEditPlanogram }) {
   );
 }
 
-export default function RegionsView({ year, onEditPlanogram }) {
-  const [activeRegion, setActiveRegion] = useState(regionData[0]?.name);
-  const [createOpen, setCreateOpen] = useState(false);
+export default function RegionsView({ year, onEditPlanogram, regions, setRegions }) {
+  const [activeRegion, setActiveRegion] = useState(regions[0]?.name);
+  const [panelMode, setPanelMode] = useState(null); // null | 'create' | 'edit'
+  const [editingDs, setEditingDs] = useState(null);
   const [form, setForm] = useState({ name: '', doors: '6', shelves: '7', notes: '' });
   const [errors, setErrors] = useState({});
+  const [deleteTarget, setDeleteTarget] = useState(null);
 
-  function resetForm() {
-    setForm({ name: '', doors: '6', shelves: '7', notes: '' });
+  function updateDoorSet(regionName, dsId, updater) {
+    setRegions((prev) => prev.map((r) =>
+      r.name !== regionName ? r : {
+        ...r,
+        doorSets: r.doorSets.map((ds) => ds._id === dsId ? updater(ds) : ds),
+      }
+    ));
+  }
+
+  function removeDoorSet(regionName, dsId) {
+    setRegions((prev) => prev.map((r) =>
+      r.name !== regionName ? r : { ...r, doorSets: r.doorSets.filter((ds) => ds._id !== dsId) }
+    ));
+  }
+
+  function resetForm(defaultDoors = '6') {
+    setForm({ name: '', doors: defaultDoors, shelves: '7', notes: '' });
     setErrors({});
   }
 
-  function validateAndCreate() {
+  function openCreate() {
+    setEditingDs(null);
+    const region = regions.find((r) => r.name === activeRegion);
+    const taken = new Set(region?.doorSets.map((ds) => ds.doors) || []);
+    const nextAvailable = [6, 7, 8, 9, 10, 11, 12].find((d) => !taken.has(d));
+    resetForm(String(nextAvailable ?? 6));
+    setPanelMode('create');
+  }
+
+  function openEdit(ds) {
+    setEditingDs(ds);
+    setForm({
+      name: ds.title || `${ds.doors} Doors`,
+      doors: String(ds.doors),
+      shelves: String(ds.defaultShelf),
+      notes: ds.notes || '',
+    });
+    setErrors({});
+    setPanelMode('edit');
+  }
+
+  function closePanel() {
+    setPanelMode(null);
+    setEditingDs(null);
+    resetForm();
+  }
+
+  function validateForm() {
     const next = {};
     if (!form.name.trim()) next.name = 'Name is required';
     const doorsN = parseInt(form.doors, 10);
-    if (!doorsN || doorsN < 1 || doorsN > 24) next.doors = 'Enter a number between 1 and 24';
+    if (!doorsN || doorsN < 6 || doorsN > 12) {
+      next.doors = 'Enter a number between 6 and 12';
+    } else {
+      const region = regions.find((r) => r.name === activeRegion);
+      const conflict = region?.doorSets.some((ds) => ds.doors === doorsN && ds._id !== editingDs?._id);
+      if (conflict) next.doors = `A ${doorsN}-door set already exists in this region`;
+    }
     const shelvesN = parseInt(form.shelves, 10);
     if (!shelvesN || shelvesN < 1 || shelvesN > 12) next.shelves = 'Enter a number between 1 and 12';
     setErrors(next);
-    if (Object.keys(next).length > 0) return;
-    const doorSet = {
-      title: form.name.trim(),
-      doors: doorsN,
-      defaultShelf: shelvesN,
-      status: 'draft',
-      notes: form.notes.trim() || undefined,
-    };
-    setCreateOpen(false);
-    resetForm();
-    onEditPlanogram?.(doorSet, activeRegion);
+    return Object.keys(next).length === 0 ? { doorsN, shelvesN } : null;
   }
 
-  const currentRegion = regionData.find((r) => r.name === activeRegion) || regionData[0];
+  function submitPanel() {
+    const valid = validateForm();
+    if (!valid) return;
+    if (panelMode === 'create') {
+      const doorSet = {
+        _id: `ds-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+        title: form.name.trim(),
+        doors: valid.doorsN,
+        defaultShelf: valid.shelvesN,
+        status: 'draft',
+        activeDoors: 0,
+        locations: 0,
+        overrides: 0,
+        notes: form.notes.trim() || undefined,
+      };
+      setRegions((prev) => prev.map((r) =>
+        r.name !== activeRegion ? r : { ...r, doorSets: [...r.doorSets, doorSet] }
+      ));
+      closePanel();
+      onEditPlanogram?.(doorSet, activeRegion);
+    } else if (panelMode === 'edit') {
+      const name = form.name.trim();
+      updateDoorSet(activeRegion, editingDs._id, (ds) => ({
+        ...ds,
+        title: name,
+        doors: valid.doorsN,
+        defaultShelf: valid.shelvesN,
+        notes: form.notes.trim() || undefined,
+      }));
+      showToast(`${name} updated`);
+      closePanel();
+    }
+  }
+
+  const currentRegion = regions.find((r) => r.name === activeRegion) || regions[0];
 
   // Door set capacity check
   const allAllowedDoors = [6, 7, 8, 9, 10, 11, 12];
@@ -194,18 +253,18 @@ export default function RegionsView({ year, onEditPlanogram }) {
   const isRegionFull = allAllowedDoors.every((d) => existingDoors.includes(d));
 
   // Summary stats
-  const allDoorSets = regionData.flatMap((r) => r.doorSets);
+  const allDoorSets = regions.flatMap((r) => r.doorSets);
   const activeCount = allDoorSets.filter((d) => d.status === 'active').length;
   const draftCount = allDoorSets.filter((d) => d.status === 'draft').length;
   const archiveCount = allDoorSets.filter((d) => d.status === 'archive').length;
-  const totalLocations = new Set(regionData.map((r) => r.doorSets[0]?.locations)).size * 20; // approximate
-  const totalRegions = regionData.length;
+  const totalLocations = new Set(regions.map((r) => r.doorSets[0]?.locations)).size * 20; // approximate
+  const totalRegions = regions.length;
   const totalDoorSets = allDoorSets.length;
 
   return (
     <div className="flex flex-col h-full">
       {/* Header */}
-      <div className="flex items-center justify-between h-[50px] -mx-5 -mt-5 px-5 border-b border-gray-200">
+      <div className="flex items-center justify-between h-[56px] shrink-0 -mx-5 -mt-5 px-6 border-b border-gray-200">
         <h1 className="text-base font-semibold text-gray-950">{year || 2026}</h1>
         <Button
           type="Outline"
@@ -243,7 +302,7 @@ export default function RegionsView({ year, onEditPlanogram }) {
         {/* Region sidebar */}
         <div className="w-[200px] shrink-0 pr-4 border-r border-gray-200 self-stretch">
           <div className="flex flex-col">
-            {regionData.map((region) => (
+            {regions.map((region) => (
               <button
                 key={region.name}
                 onClick={() => setActiveRegion(region.name)}
@@ -261,12 +320,13 @@ export default function RegionsView({ year, onEditPlanogram }) {
 
         {/* Door set cards grid */}
         <div className="flex-1 pl-5">
-          <div className="flex justify-end mb-4">
+          <div className="flex justify-end mb-4 min-h-8">
             <Button
               type="Default"
               size="sm"
               state={isRegionFull ? 'Disabled' : 'Default'}
-              onClick={() => { if (!isRegionFull) { resetForm(); setCreateOpen(true); } }}
+              onClick={() => { if (!isRegionFull) openCreate(); }}
+              title={isRegionFull ? 'All door sets (6–12) already exist in this region' : undefined}
               leadingIcon={
                 <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
                   <path d="M12.25 7C12.25 7.13261 12.1973 7.25979 12.1036 7.35355C12.0098 7.44732 11.8826 7.5 11.75 7.5H7.5V11.75C7.5 11.8826 7.44732 12.0098 7.35355 12.1036C7.25979 12.1973 7.13261 12.25 7 12.25C6.86739 12.25 6.74021 12.1973 6.64645 12.1036C6.55268 12.0098 6.5 11.8826 6.5 11.75V7.5H2.25C2.11739 7.5 1.99021 7.44732 1.89645 7.35355C1.80268 7.25979 1.75 7.13261 1.75 7C1.75 6.86739 1.80268 6.74021 1.89645 6.64645C1.99021 6.55268 2.11739 6.5 2.25 6.5H6.5V2.25C6.5 2.11739 6.55268 1.99021 6.64645 1.89645C6.74021 1.80268 6.86739 1.75 7 1.75C7.13261 1.75 7.25979 1.80268 7.35355 1.89645C7.44732 1.99021 7.5 2.11739 7.5 2.25V6.5H11.75C11.8826 6.5 12.0098 6.55268 12.1036 6.64645C12.1973 6.74021 12.25 6.86739 12.25 7Z" fill="white"/>
@@ -277,28 +337,58 @@ export default function RegionsView({ year, onEditPlanogram }) {
             </Button>
           </div>
           <div className="grid grid-cols-2 gap-4">
-            {currentRegion.doorSets.map((ds, i) => (
-              <DoorSetCard
-                key={i}
-                ds={ds}
-                onEditPlanogram={(doorSet) => onEditPlanogram?.(doorSet, currentRegion.name)}
-              />
-            ))}
+            {currentRegion.doorSets.map((ds, i) => {
+              const label = ds.title || `${ds.doors} Doors`;
+              const menuItems = [
+                ds.status === 'active'
+                  ? {
+                      label: 'Mark Inactive', icon: '/assets/CheckCircle.svg',
+                      onClick: () => {
+                        updateDoorSet(currentRegion.name, ds._id, (d) => ({ ...d, status: 'draft' }));
+                        showToast(`${label} marked Inactive`);
+                      },
+                    }
+                  : {
+                      label: 'Mark Active', icon: '/assets/CheckCircle.svg',
+                      onClick: () => {
+                        updateDoorSet(currentRegion.name, ds._id, (d) => ({ ...d, status: 'active' }));
+                        showToast(`${label} marked Active`);
+                      },
+                    },
+                { label: 'Edit', icon: '/assets/Edit.svg', onClick: () => openEdit(ds) },
+                {
+                  label: 'Archive', icon: '/assets/Archive 2.svg',
+                  onClick: () => {
+                    updateDoorSet(currentRegion.name, ds._id, (d) => ({ ...d, status: 'archive' }));
+                    showToast(`${label} archived`);
+                  },
+                },
+                { label: 'Delete', icon: '/assets/Delete.svg', danger: true, onClick: () => setDeleteTarget(ds) },
+              ];
+              return (
+                <DoorSetCard
+                  key={i}
+                  ds={ds}
+                  onEditPlanogram={(doorSet) => onEditPlanogram?.(doorSet, currentRegion.name)}
+                  menuItems={menuItems}
+                />
+              );
+            })}
           </div>
         </div>
       </div>
 
       <SidePanel
-        open={createOpen}
-        title="Create Planogram"
-        onClose={() => { setCreateOpen(false); resetForm(); }}
+        open={!!panelMode}
+        title={panelMode === 'edit' ? 'Edit Door Set' : 'Create Planogram'}
+        onClose={closePanel}
         footer={
           <>
-            <Button type="Outline" size="sm" onClick={() => { setCreateOpen(false); resetForm(); }}>
-              Discard
+            <Button type="Outline" size="sm" onClick={closePanel}>
+              {panelMode === 'edit' ? 'Cancel' : 'Discard'}
             </Button>
-            <Button type="Default" size="sm" onClick={validateAndCreate}>
-              Create Planogram
+            <Button type="Default" size="sm" onClick={submitPanel}>
+              {panelMode === 'edit' ? 'Save Changes' : 'Create Planogram'}
             </Button>
           </>
         }
@@ -306,29 +396,35 @@ export default function RegionsView({ year, onEditPlanogram }) {
         <div className="flex flex-col gap-6">
           <Input
             label="Door set name"
+            required
             placeholder="e.g. 6 Doors — Beachside"
             value={form.name}
-            onChange={(v) => setForm((f) => ({ ...f, name: v }))}
-            helperText={errors.name || `Region: ${activeRegion}`}
+            onChange={(v) => { setForm((f) => ({ ...f, name: v })); if (errors.name) setErrors((e) => ({ ...e, name: undefined })); }}
+            helperText={`Region: ${activeRegion}`}
+            error={errors.name}
           />
           <div className="grid grid-cols-2 gap-4">
             <Input
               label="Number of doors"
+              required
               type="number"
-              min={1}
-              max={24}
+              min={6}
+              max={12}
               value={form.doors}
-              onChange={(v) => setForm((f) => ({ ...f, doors: v }))}
-              helperText={errors.doors || 'Between 1 and 24'}
+              onChange={(v) => { setForm((f) => ({ ...f, doors: v })); if (errors.doors) setErrors((e) => ({ ...e, doors: undefined })); }}
+              helperText="Between 6 and 12 (unique per region)"
+              error={errors.doors}
             />
             <Input
               label="Shelves per door"
+              required
               type="number"
               min={1}
               max={12}
               value={form.shelves}
-              onChange={(v) => setForm((f) => ({ ...f, shelves: v }))}
-              helperText={errors.shelves || 'Between 1 and 12'}
+              onChange={(v) => { setForm((f) => ({ ...f, shelves: v })); if (errors.shelves) setErrors((e) => ({ ...e, shelves: undefined })); }}
+              helperText="Between 1 and 12"
+              error={errors.shelves}
             />
           </div>
           <Input
@@ -339,6 +435,21 @@ export default function RegionsView({ year, onEditPlanogram }) {
           />
         </div>
       </SidePanel>
+
+      <ConfirmDialog
+        open={!!deleteTarget}
+        title={deleteTarget ? `Delete ${deleteTarget.title || `${deleteTarget.doors} Doors`}?` : ''}
+        message="This will permanently remove the door set and its planogram layout."
+        cancelLabel="Cancel"
+        confirmLabel="Yes, Delete"
+        onCancel={() => setDeleteTarget(null)}
+        onConfirm={() => {
+          const label = deleteTarget.title || `${deleteTarget.doors} Doors`;
+          removeDoorSet(currentRegion.name, deleteTarget._id);
+          showToast(`${label} deleted`);
+          setDeleteTarget(null);
+        }}
+      />
     </div>
   );
 }

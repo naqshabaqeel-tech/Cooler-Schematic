@@ -1,8 +1,8 @@
 import Button from './Button';
 
-export default function SubNav() {
+export default function SubNav({ showArchived, onToggleArchived }) {
   return (
-    <div className="flex items-center justify-between px-6 py-3 border-b border-[#F1F5F9] bg-white">
+    <div className="flex items-center justify-between h-14 px-6 border-b border-[#F1F5F9] bg-white">
       {/* Search */}
       <div className="flex items-center gap-1 h-8 px-2 rounded-lg border border-[#EAECF0] bg-white w-[249px]">
         <img src="/assets/MagnifyingGlass.svg" alt="" className="w-4 h-4 shrink-0" />
@@ -15,13 +15,16 @@ export default function SubNav() {
 
       {/* Actions */}
       <div className="flex items-center gap-2">
-        <Button
-          type="Outline"
-          size="sm"
-          leadingIcon={<img src="/assets/Archive 2.svg" alt="" className="w-3.5 h-3.5" />}
-        >
-          Archived
-        </Button>
+        {!showArchived && (
+          <Button
+            type="Outline"
+            size="sm"
+            onClick={onToggleArchived}
+            leadingIcon={<img src="/assets/Archive 2.svg" alt="" className="w-3.5 h-3.5" />}
+          >
+            Archived
+          </Button>
+        )}
         <Button
           type="Default"
           size="sm"
