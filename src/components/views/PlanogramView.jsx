@@ -338,6 +338,7 @@ function ShelfRow({
   onGlideMouseDown, onGlideMouseEnter, onShelfMouseUp,
   customIncrement, onAddCustomArea,
   onRemoveShelf,
+  pickedShelf, onPickShelf,
 }) {
   const glides = shelf.glides || [];
   const widthOf = (g) => g?._type === 'custom' ? (g.width || 0) : (g?.product?.glideWidth || 0);
@@ -357,8 +358,18 @@ function ShelfRow({
     : false;
   const isDragging = !!dragSource;
 
+  const isPickedShelfSrc = pickedShelf?.doorIdx === doorIdx && pickedShelf?.shelfIdx === shelfIdx;
+  const dupArmed = activeTool === 'copy';
+  // Row-level hover affordance only when Duplicate is armed and nothing is picked yet
+  // (and this row isn't already the picked source — that gets its own amber ring).
+  const showDupHoverRing = dupArmed && !pickedGlide && !pickedShelf;
+
   return (
-    <div className="flex items-stretch group/shelf">
+    <div className={`flex items-stretch group/shelf relative ${
+      isPickedShelfSrc ? 'ring-2 ring-amber-400 ring-inset bg-amber-50/30' : ''
+    } ${
+      showDupHoverRing ? 'hover:bg-green-50/30 hover:ring-2 hover:ring-green-200 hover:ring-inset' : ''
+    }`}>
       <div className="w-[18px] shrink-0 flex items-center justify-center text-[9px] text-gray-400/70 font-medium select-none relative">
         <span className="group-hover/shelf:opacity-0 transition-opacity">{shelfIdx + 1}</span>
         <button
@@ -481,11 +492,7 @@ function ShelfRow({
               )}
 
               {isCustom ? (
-                <div className="w-[88%] h-[80%] rounded border border-dashed border-gray-400 bg-gray-50/50 flex items-center justify-center">
-                  <span className="text-[9px] font-semibold text-gray-500 leading-none tracking-wide uppercase">
-                    Custom · {Math.round(widthOf(glide) * 10) / 10}″
-                  </span>
-                </div>
+                <div className="w-[92%] h-[84%] rounded border border-dashed border-gray-400 bg-gray-200/70" />
               ) : product?.packType === 'Slim can' && !glide.single ? (
                 <div className={`w-full h-full flex flex-col gap-[1px] overflow-hidden transition-opacity ${isDragSource ? 'opacity-40' : ''} ${isPicked ? 'opacity-50' : ''}`}>
                   <img
@@ -527,11 +534,12 @@ function ShelfRow({
             Hidden once the shelf flips to auto-distribute mode (no useful slot
             for "append" when glides are space-between). */}
         {remainingPct > 0.1 && !isShelfNearFull && (() => {
-          const addArmed    = activeTool === 'add'    && selectedProduct;
-          const copyArmed   = activeTool === 'copy'   && pickedProduct;
-          const customArmed = activeTool === 'custom';
-          const moveArmed   = activeTool === 'move'   && isDragging;
-          const customFits  = customArmed && customIncrement <= remaining + 0.001;
+          const addArmed     = activeTool === 'add'    && selectedProduct;
+          const copyArmed    = activeTool === 'copy'   && pickedProduct;
+          const shelfPasteArmed = activeTool === 'copy' && pickedShelf;
+          const customArmed  = activeTool === 'custom';
+          const moveArmed    = activeTool === 'move'   && isDragging;
+          const customFits   = customArmed && customIncrement <= remaining + 0.001;
           let zoneClass = '';
           let zoneTitle = `${Math.round(remaining * 10) / 10}″ left  (right-click → mark as Custom)`;
 
@@ -549,6 +557,9 @@ function ShelfRow({
             zoneTitle = pickedFits
               ? `Click to duplicate ${pickedProduct.name} here (${pickedProduct.glideWidth}″)`
               : `Not enough room — ${Math.round(remaining * 10) / 10}″ left, needs ${pickedProduct.glideWidth}″`;
+          } else if (shelfPasteArmed) {
+            zoneClass = 'cursor-copy hover:bg-amber-50/40';
+            zoneTitle = 'Click to paste the picked shelf here (replaces contents)';
           } else if (customArmed) {
             zoneClass = customFits
               ? 'cursor-crosshair hover:bg-amber-50/40'
@@ -576,8 +587,9 @@ function ShelfRow({
               onClick={() => {
                 if (addArmed && selectedFits) {
                   onAddGlide(doorIdx, shelfIdx, selectedProduct);
-                } else if (copyArmed) {
-                  // Pass null as the destination glide index — the handler treats this as "append".
+                } else if (copyArmed || shelfPasteArmed) {
+                  // Pass null as the destination glide index — the handler treats this as "append"
+                  // (or, when a shelf is picked, routes through handlePasteShelf).
                   onDuplicateGlide(doorIdx, shelfIdx, null);
                 } else if (customArmed && customFits) {
                   onAddCustomArea(doorIdx, shelfIdx, customIncrement);
@@ -598,6 +610,39 @@ function ShelfRow({
           );
         })()}
       </div>
+
+      {/* Duplicate-tool: floating "copy this whole shelf" button on the right edge.
+          Distinct from per-glide pick so the two flows don't fight each other. */}
+      {dupArmed && (
+        <button
+          type="button"
+          onClick={(e) => { e.stopPropagation(); if (!pickedGlide || isPickedShelfSrc) onPickShelf?.(doorIdx, shelfIdx); }}
+          disabled={!!pickedGlide && !isPickedShelfSrc}
+          title={
+            isPickedShelfSrc
+              ? 'Source shelf — click to deselect'
+              : pickedShelf
+              ? `Click to paste source shelf here (replaces ${shelf.label || `Shelf ${shelfIdx + 1}`})`
+              : pickedGlide
+              ? 'Cancel the facing pick first to copy a whole shelf'
+              : 'Copy this entire shelf'
+          }
+          className={`absolute right-1 top-1/2 -translate-y-1/2 z-20 flex items-center justify-center w-5 h-5 rounded border bg-white shadow-sm transition-colors ${
+            isPickedShelfSrc
+              ? 'border-amber-400 text-amber-600 cursor-pointer'
+              : pickedShelf
+              ? 'border-green-200 text-green-600 hover:bg-green-50 cursor-pointer'
+              : pickedGlide
+              ? 'opacity-40 cursor-not-allowed border-gray-200 text-gray-400'
+              : 'border-gray-200 text-gray-500 hover:bg-green-50 hover:text-green-600 hover:border-green-200 cursor-pointer'
+          }`}
+        >
+          <svg width="11" height="11" viewBox="0 0 18 18" fill="none">
+            <rect x="6" y="6" width="9" height="9" rx="1.5" stroke="currentColor" strokeWidth="1.3"/>
+            <path d="M12 6V4.5C12 3.67157 11.3284 3 10.5 3H4.5C3.67157 3 3 3.67157 3 4.5V10.5C3 11.3284 3.67157 12 4.5 12H6" stroke="currentColor" strokeWidth="1.3"/>
+          </svg>
+        </button>
+      )}
     </div>
   );
 }
@@ -611,6 +656,7 @@ function DoorColumn({
   onGlideMouseDown, onGlideMouseEnter, onShelfMouseUp,
   customIncrement, onAddCustomArea,
   onAddShelfToDoor, onRemoveShelf, maxShelves,
+  pickedShelf, onPickShelf,
 }) {
   const facingCount = door.shelves.reduce(
     (acc, s) => acc + (s.glides?.reduce((sum, g) => sum + facingsOf(g), 0) || 0),
@@ -667,6 +713,8 @@ function DoorColumn({
               customIncrement={customIncrement}
               onAddCustomArea={onAddCustomArea}
               onRemoveShelf={onRemoveShelf}
+              pickedShelf={pickedShelf}
+              onPickShelf={onPickShelf}
             />
           ))}
 
@@ -718,6 +766,7 @@ export default function PlanogramView({ doorSet, regionName, onExit }) {
   const [vendorMixOpen, setVendorMixOpen] = useState(true);
   const [selectedGlides, setSelectedGlides] = useState([]); // [{doorIdx, shelfIdx, glideIdx}]
   const [pickedGlide, setPickedGlide] = useState(null);     // {doorIdx, shelfIdx, glideIdx}
+  const [pickedShelf, setPickedShelf] = useState(null);     // {doorIdx, shelfIdx} — Duplicate-tool whole-shelf pick
   const [layout, setLayout] = useState(() =>
     generateShelfLayout(doorSet?.doors || 6, doorSet?.defaultShelf || 7)
   );
@@ -780,6 +829,7 @@ export default function PlanogramView({ doorSet, regionName, onExit }) {
     { id: 'add',    label: 'Add Product', tip: 'Click a shelf to add one facing of the selected product.',          icon: PlusBoxIcon },
     { id: 'custom', label: 'Custom Area', tip: 'Click a shelf to reserve 2.5″ for the store owner. Click again to extend.', icon: CustomIcon },
     { id: 'move',   label: 'Move',        tip: 'Drag a facing to reorder, or drop it onto another shelf.',           icon: MoveIcon },
+    { id: 'copy',   label: 'Duplicate',   tip: 'Click a facing to copy it, or click a shelf number to copy the whole shelf. Then click a destination.', icon: CopyIcon },
     { id: 'remove', label: 'Remove',      tip: 'Click a facing to remove it.',                                       icon: TrashIcon },
   ];
 
@@ -938,17 +988,33 @@ export default function PlanogramView({ doorSet, regionName, onExit }) {
     updateLayout((prev) => {
       const next = JSON.parse(JSON.stringify(prev));
       const glides = next[doorIdx].shelves[shelfIdx].glides;
+      const round1 = (n) => Math.round(n * 10) / 10;
       if (insertAt == null) {
-        // Append path: auto-coalesce with the trailing custom block.
+        // Append: coalesce with the trailing custom block if there is one.
         const last = glides[glides.length - 1];
         if (last && last._type === 'custom') {
-          last.width = Math.round((last.width + w) * 10) / 10;
+          last.width = round1(last.width + w);
         } else {
           glides.push({ _type: 'custom', width: w });
         }
       } else {
-        // Explicit insertion at a specific index — always a fresh block.
-        glides.splice(insertAt, 0, { _type: 'custom', width: w });
+        // Insert before `insertAt` — but merge with adjacent custom blocks on
+        // either side so consecutive customs always read as one slab.
+        const leftIdx  = insertAt - 1;
+        const rightIdx = insertAt;
+        const leftIsCustom  = glides[leftIdx]?._type  === 'custom';
+        const rightIsCustom = glides[rightIdx]?._type === 'custom';
+        if (leftIsCustom && rightIsCustom) {
+          // Absorb the right block into the left, then add the new inches.
+          glides[leftIdx].width = round1(glides[leftIdx].width + glides[rightIdx].width + w);
+          glides.splice(rightIdx, 1);
+        } else if (leftIsCustom) {
+          glides[leftIdx].width = round1(glides[leftIdx].width + w);
+        } else if (rightIsCustom) {
+          glides[rightIdx].width = round1(glides[rightIdx].width + w);
+        } else {
+          glides.splice(insertAt, 0, { _type: 'custom', width: w });
+        }
       }
       return next;
     });
@@ -963,7 +1029,14 @@ export default function PlanogramView({ doorSet, regionName, onExit }) {
   }
 
   function handleDuplicateGlide(doorIdx, shelfIdx, glideIdx) {
-    // Two-step copy: click source first, then a destination shelf to add a duplicate.
+    // Shelf-mode pick takes priority: any click on a destination shelf
+    // (glide or trailing zone) pastes the whole shelf.
+    if (pickedShelf) {
+      handlePasteShelf(doorIdx, shelfIdx);
+      return;
+    }
+
+    // Two-step glide copy: click source first, then a destination shelf to add a duplicate.
     // `glideIdx === null` from the trailing-zone path means "append"; otherwise "insert before this glide".
     const source = glideIdx == null ? null : layout[doorIdx]?.shelves[shelfIdx]?.glides[glideIdx];
 
@@ -994,6 +1067,72 @@ export default function PlanogramView({ doorSet, regionName, onExit }) {
         return next;
       });
       setPickedGlide(null);
+    }
+  }
+
+  // Pick a whole shelf for the Duplicate tool. Click again on the same shelf
+  // number → unpick. Click a different shelf's glide / trailing zone / number
+  // → paste the picked shelf's glides into the destination.
+  function handlePickShelf(doorIdx, shelfIdx) {
+    if (activeTool !== 'copy') return;
+    // If we already picked the same shelf, treat it as a deselect.
+    if (pickedShelf && pickedShelf.doorIdx === doorIdx && pickedShelf.shelfIdx === shelfIdx) {
+      setPickedShelf(null);
+      return;
+    }
+    // If we already picked a different shelf, treat this number-click as the
+    // paste target (parity with clicking any other part of the destination shelf).
+    if (pickedShelf) {
+      handlePasteShelf(doorIdx, shelfIdx);
+      return;
+    }
+    // Otherwise, picking a new source shelf — but first clear any glide pick
+    // to keep the two modes mutually exclusive.
+    setPickedGlide(null);
+    setPickedShelf({ doorIdx, shelfIdx });
+  }
+
+  function handlePasteShelf(destDoorIdx, destShelfIdx) {
+    if (!pickedShelf) return;
+    if (pickedShelf.doorIdx === destDoorIdx && pickedShelf.shelfIdx === destShelfIdx) {
+      // Same shelf — no-op, just unpick.
+      setPickedShelf(null);
+      return;
+    }
+    const srcShelf = layout[pickedShelf.doorIdx]?.shelves[pickedShelf.shelfIdx];
+    const destShelf = layout[destDoorIdx]?.shelves[destShelfIdx];
+    if (!srcShelf || !destShelf) { setPickedShelf(null); return; }
+    if ((srcShelf.glides || []).length === 0) {
+      showToast('Source shelf has nothing to copy', 'error');
+      setPickedShelf(null);
+      return;
+    }
+    const srcLabel = srcShelf.label || `Shelf ${pickedShelf.shelfIdx + 1}`;
+    const destLabel = destShelf.label || `Shelf ${destShelfIdx + 1}`;
+    const apply = () => {
+      updateLayout((prev) => {
+        const next = JSON.parse(JSON.stringify(prev));
+        next[destDoorIdx].shelves[destShelfIdx].glides = JSON.parse(JSON.stringify(srcShelf.glides));
+        return next;
+      });
+      showToast(`Copied ${srcLabel} → Door ${destDoorIdx + 1} ${destLabel}`);
+      setPickedShelf(null);
+    };
+    const destHasContent = (destShelf.glides || []).length > 0;
+    if (destHasContent) {
+      const destFacings = destShelf.glides.reduce((s, g) => s + facingsOf(g), 0);
+      const destCustom = destShelf.glides.reduce((s, g) => s + (g._type === 'custom' ? g.width : 0), 0);
+      const lossFragments = [];
+      if (destFacings > 0) lossFragments.push(`${destFacings} facing${destFacings === 1 ? '' : 's'}`);
+      if (destCustom > 0) lossFragments.push(`${Math.round(destCustom * 10) / 10}″ custom`);
+      setConfirmAction({
+        title: `Replace Door ${destDoorIdx + 1} ${destLabel}?`,
+        message: `${lossFragments.join(' + ')} on the destination shelf will be overwritten with the contents of Door ${pickedShelf.doorIdx + 1} ${srcLabel}.`,
+        confirmLabel: 'Yes, Replace',
+        run: apply,
+      });
+    } else {
+      apply();
     }
   }
 
@@ -1254,6 +1393,7 @@ export default function PlanogramView({ doorSet, regionName, onExit }) {
   function switchTool(toolId) {
     setActiveTool(toolId);
     setPickedGlide(null);
+    setPickedShelf(null);
     setDragSource(null);
     setDragOver(null);
     isDraggingRef.current = false;
@@ -1283,6 +1423,7 @@ export default function PlanogramView({ doorSet, regionName, onExit }) {
         setDragSource(null);
         setDragOver(null);
         setPickedGlide(null);
+        setPickedShelf(null);
         setSelectedGlides([]);
       }
     }
@@ -1828,6 +1969,32 @@ export default function PlanogramView({ doorSet, regionName, onExit }) {
         {/* Canvas area */}
         <div className="flex-1 flex flex-col min-w-0 bg-white relative">
 
+          {/* Duplicate clipboard pill — surfaces what's currently held so the
+              user knows there's a paste pending. Click × to cancel. */}
+          {(pickedGlide || pickedShelf) && (
+            <div className="absolute top-3 left-1/2 -translate-x-1/2 z-40 flex items-center gap-2 bg-[#0B2148] text-white text-xs font-medium px-3 py-2 rounded-full shadow-[0_4px_12px_rgba(0,0,0,0.18)] max-w-[90%]">
+              <svg width="14" height="14" viewBox="0 0 16 16" fill="none" className="shrink-0">
+                <rect x="4" y="3" width="8" height="10" rx="1" stroke="currentColor" strokeWidth="1.3"/>
+                <path d="M6 3v0a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1v0" stroke="currentColor" strokeWidth="1.3"/>
+              </svg>
+              <span className="truncate">
+                {pickedShelf
+                  ? `${layout[pickedShelf.doorIdx]?.shelves[pickedShelf.shelfIdx]?.label || `Shelf ${pickedShelf.shelfIdx + 1}`} from Door ${pickedShelf.doorIdx + 1} copied — click any shelf to paste`
+                  : `${pickedProduct?.name || 'Facing'} copied — click any facing to insert before, or empty zone to append`}
+              </span>
+              <button
+                type="button"
+                onClick={() => { setPickedGlide(null); setPickedShelf(null); }}
+                className="ml-1 text-white/70 hover:text-white cursor-pointer bg-transparent border-none p-0 shrink-0"
+                title="Cancel"
+              >
+                <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
+                  <path d="M3 3L9 9M9 3L3 9" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
+                </svg>
+              </button>
+            </div>
+          )}
+
           <div className="flex-1 overflow-auto p-6">
             {focusedDoor === 'all' ? (
               <div
@@ -1858,6 +2025,8 @@ export default function PlanogramView({ doorSet, regionName, onExit }) {
                       onAddShelfToDoor={handleAddShelfToDoor}
                       onRemoveShelf={handleRemoveShelfRequest}
                       maxShelves={MAX_SHELVES_PER_DOOR}
+                      pickedShelf={pickedShelf}
+                      onPickShelf={handlePickShelf}
                     />
                   </div>
                 ))}
@@ -1919,6 +2088,8 @@ export default function PlanogramView({ doorSet, regionName, onExit }) {
                       onAddShelfToDoor={handleAddShelfToDoor}
                       onRemoveShelf={handleRemoveShelfRequest}
                       maxShelves={MAX_SHELVES_PER_DOOR}
+                      pickedShelf={pickedShelf}
+                      onPickShelf={handlePickShelf}
                     />
                   </div>
                 </div>
