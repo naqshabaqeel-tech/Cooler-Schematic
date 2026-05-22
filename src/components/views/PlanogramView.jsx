@@ -2,7 +2,22 @@ import { useState, useRef, useEffect, useCallback } from 'react';
 import Badge from '../Badge';
 import Button from '../Button';
 import ConfirmDialog from '../ConfirmDialog';
-import { productCategories, generateShelfLayout, SHELF_WIDTH_INCHES, getMaxFacings, PACK_TYPES } from '../../data/planogram';
+import { productCategories, generateShelfLayout, SHELF_WIDTH_INCHES, getMaxFacings, PACK_TYPES, PACK_TYPE_LABELS, VENDORS, VENDOR_COLORS } from '../../data/planogram';
+
+// Module-level glide helpers — used by both PlanogramView and the rendering subcomponents.
+function glideWidthOf(g) {
+  if (!g) return 0;
+  if (g._type === 'custom') return g.width || 0;
+  return g.product?.glideWidth || 0;
+}
+// Facings count: slim cans stack 2 vertically per glide by default; if the
+// glide is explicitly marked `single`, it counts as 1. Custom areas count 0;
+// everything else is 1 facing per glide.
+function facingsOf(g) {
+  if (!g || g._type === 'custom') return 0;
+  if (g.product?.packType === 'Slim can' && !g.single) return 2;
+  return 1;
+}
 
 function pad(n) {
   return String(n).padStart(2, '0');
@@ -144,6 +159,15 @@ function CopyIcon({ active }) {
   );
 }
 
+function CustomIcon({ active }) {
+  // Dashed square — signifies a reserved "free space" area
+  return (
+    <svg width="18" height="18" viewBox="0 0 18 18" fill="none">
+      <rect x="3" y="3" width="12" height="12" rx="2" stroke={active ? '#266DF0' : '#667085'} strokeWidth="1.4" strokeDasharray="2 2" />
+    </svg>
+  );
+}
+
 function UndoIcon() {
   return (
     <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
@@ -158,6 +182,14 @@ function RedoIcon() {
     <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
       <path d="M13 6H6C4.34315 6 3 7.34315 3 9C3 10.6569 4.34315 12 6 12H8" stroke="#667085" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round"/>
       <path d="M10.5 3.5L13 6L10.5 8.5" stroke="#667085" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round"/>
+    </svg>
+  );
+}
+
+function ExportIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+      <path d="M7 2v7M7 2L4.5 4.5M7 2l2.5 2.5M2.5 9v1.5A1.5 1.5 0 0 0 4 12h6a1.5 1.5 0 0 0 1.5-1.5V9" stroke="#667085" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
     </svg>
   );
 }
@@ -260,8 +292,9 @@ function FilterDropdown({ label, value, options, onChange }) {
     return () => document.removeEventListener('mousedown', handleClick);
   }, [open]);
 
-  const display = value === 'all' ? label : value;
-  const items = [{ value: 'all', label }, ...options.map((o) => ({ value: o, label: o }))];
+  const normalized = options.map((o) => (typeof o === 'string' ? { value: o, label: o } : o));
+  const display = value === 'all' ? label : (normalized.find((o) => o.value === value)?.label ?? value);
+  const items = [{ value: 'all', label }, ...normalized];
 
   return (
     <div className="flex-1 min-w-0 relative" ref={ref}>
@@ -301,27 +334,49 @@ function ShelfRow({
   shelf, doorIdx, shelfIdx, selectedProduct, activeTool,
   onAddGlide, onRemoveGlide, onDuplicateGlide,
   selectedGlides, onGlideClick,
-  pickedGlide, dragSource, dragOver,
+  pickedGlide, pickedProduct, dragSource, dragOver,
   onGlideMouseDown, onGlideMouseEnter, onShelfMouseUp,
+  customIncrement, onAddCustomArea,
+  onRemoveShelf,
 }) {
   const glides = shelf.glides || [];
-  const used = glides.reduce((s, g) => s + (g.product?.glideWidth || 0), 0);
+  const widthOf = (g) => g?._type === 'custom' ? (g.width || 0) : (g?.product?.glideWidth || 0);
+  const used = glides.reduce((s, g) => s + widthOf(g), 0);
   const remaining = Math.max(0, SHELF_WIDTH_INCHES - used);
   const remainingPct = (remaining / SHELF_WIDTH_INCHES) * 100;
+  // Smallest possible glide is the slim-can width (2.5″). When the leftover
+  // space drops below that, no further product can ever fit — switch to
+  // `justify-between` so existing glides spread evenly instead of huddling left.
+  const SMALLEST_GLIDE = 2.5;
+  const isShelfNearFull = glides.length >= 2 && remaining < SMALLEST_GLIDE;
   const selectedFits = selectedProduct
     ? used + (selectedProduct.glideWidth || 0) <= SHELF_WIDTH_INCHES + 0.001
+    : false;
+  const pickedFits = pickedProduct
+    ? used + (pickedProduct.glideWidth || 0) <= SHELF_WIDTH_INCHES + 0.001
     : false;
   const isDragging = !!dragSource;
 
   return (
-    <div className="flex items-stretch">
-      <div className="w-[18px] shrink-0 flex items-center justify-center text-[9px] text-gray-400/70 font-medium select-none">
-        {shelfIdx + 1}
+    <div className="flex items-stretch group/shelf">
+      <div className="w-[18px] shrink-0 flex items-center justify-center text-[9px] text-gray-400/70 font-medium select-none relative">
+        <span className="group-hover/shelf:opacity-0 transition-opacity">{shelfIdx + 1}</span>
+        <button
+          type="button"
+          onClick={(e) => { e.stopPropagation(); onRemoveShelf?.(doorIdx, shelfIdx); }}
+          title={`Remove Shelf ${shelfIdx + 1}`}
+          className="absolute inset-0 flex items-center justify-center opacity-0 group-hover/shelf:opacity-100 transition-opacity cursor-pointer bg-transparent border-none p-0 hover:text-red-600 text-gray-500"
+        >
+          <svg width="10" height="10" viewBox="0 0 10 10" fill="none">
+            <path d="M2 2L8 8M8 2L2 8" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
+          </svg>
+        </button>
       </div>
-      <div className="flex-1 flex border-b border-gray-300/40 bg-transparent relative">
+      <div className={`flex-1 flex border-b border-gray-300/40 bg-transparent relative ${isShelfNearFull ? 'justify-between' : ''}`}>
         {glides.map((glide, glideIdx) => {
+          const isCustom = glide._type === 'custom';
           const product = glide.product;
-          const widthPct = ((product?.glideWidth || 0) / SHELF_WIDTH_INCHES) * 100;
+          const widthPct = (widthOf(glide) / SHELF_WIDTH_INCHES) * 100;
           const isSelected = selectedGlides.some(
             (s) => s.doorIdx === doorIdx && s.shelfIdx === shelfIdx && s.glideIdx === glideIdx
           );
@@ -342,7 +397,7 @@ function ShelfRow({
           } else if (activeTool === 'remove') {
             cursorClass = 'cursor-pointer';
             hoverClass = 'hover:bg-red-50';
-          } else if (activeTool === 'copy') {
+          } else if (activeTool === 'copy' && !isCustom) {
             if (!pickedGlide) {
               cursorClass = 'cursor-copy';
               hoverClass = 'hover:ring-2 hover:ring-green-300 hover:ring-inset';
@@ -354,12 +409,27 @@ function ShelfRow({
             dragOverClass = 'ring-2 ring-primary-blue-400 ring-inset bg-primary-blue-50/40';
           }
 
+          // Insertion-line cue — show a blue vertical bar on the glide's left edge
+          // when an insertion-armed tool is active and the new item would fit.
+          const insertingAdd    = activeTool === 'add' && selectedProduct;
+          const insertingCopy   = activeTool === 'copy' && pickedProduct;
+          const insertingCustom = activeTool === 'custom';
+          const insertProduct   = insertingAdd ? selectedProduct : insertingCopy ? pickedProduct : null;
+          const insertProductFits = insertProduct
+            ? used + (insertProduct.glideWidth || 0) <= SHELF_WIDTH_INCHES + 0.001
+            : false;
+          const customCueFits   = insertingCustom && customIncrement <= remaining + 0.001;
+          const showInsertCue   = (insertProduct && insertProductFits) || customCueFits;
+
           return (
             <div
               key={glideIdx}
               style={{ width: `${widthPct}%` }}
-              onMouseDown={() => {
-                if (activeTool === 'move') onGlideMouseDown(doorIdx, shelfIdx, glideIdx);
+              onMouseDown={(e) => {
+                if (activeTool === 'move') {
+                  e.preventDefault(); // Block native image/text drag from hijacking
+                  onGlideMouseDown(doorIdx, shelfIdx, glideIdx);
+                }
               }}
               onMouseEnter={() => {
                 if (activeTool === 'move') onGlideMouseEnter(doorIdx, shelfIdx, glideIdx);
@@ -374,23 +444,72 @@ function ShelfRow({
                 } else if (activeTool === 'remove') {
                   onRemoveGlide(doorIdx, shelfIdx, glideIdx);
                 } else if (activeTool === 'copy') {
-                  onDuplicateGlide(doorIdx, shelfIdx, glideIdx);
+                  // Two-phase: if no source picked yet, pick a non-custom source;
+                  // if a source IS picked, insert a duplicate BEFORE this clicked glide.
+                  if (!pickedGlide) {
+                    if (!isCustom) onDuplicateGlide(doorIdx, shelfIdx, glideIdx);
+                  } else {
+                    onDuplicateGlide(doorIdx, shelfIdx, glideIdx);
+                  }
                 } else if (activeTool === 'add' && selectedProduct) {
-                  onAddGlide(doorIdx, shelfIdx, selectedProduct);
+                  // Insert the new facing BEFORE this glide (custom or not — custom
+                  // doesn't react to product clicks beyond moving it right by insertion).
+                  onAddGlide(doorIdx, shelfIdx, selectedProduct, glideIdx);
+                } else if (activeTool === 'custom') {
+                  // Insert a fresh Custom block BEFORE this glide.
+                  onAddCustomArea(doorIdx, shelfIdx, customIncrement, glideIdx);
                 }
               }}
-              className={`h-[52px] border-r border-gray-300/30 flex items-center justify-center transition-all select-none ${cursorClass} ${!isDragging ? hoverClass : ''} ${
+              className={`h-[52px] border-r border-gray-300/30 flex items-center justify-center transition-all select-none relative group/glide ${cursorClass} ${!isDragging ? hoverClass : ''} ${
                 isSelected ? 'ring-2 ring-primary-blue-500 ring-inset bg-primary-blue-50/30' : ''
               } ${isPicked ? 'ring-2 ring-amber-400 ring-inset bg-amber-50/40' : ''} ${dragOverClass}`}
-              title={product ? `${product.name} (${product.size}) — ${product.glideWidth}″` : 'Glide'}
+              title={
+                isCustom
+                  ? `Custom area (${widthOf(glide)}″) — store owner's free space`
+                  : product?.packType === 'Slim can' && !glide.single
+                  ? `${product.name} (${product.size}) — 2 stacked facings (${product.glideWidth}″)`
+                  : product?.packType === 'Slim can' && glide.single
+                  ? `${product.name} (${product.size}) — 1 facing, not stacked (${product.glideWidth}″)`
+                  : product
+                  ? `${product.name} (${product.size}) — ${product.glideWidth}″`
+                  : 'Glide'
+              }
             >
+              {/* Insertion-line cue — left edge of this glide becomes the insert-here marker */}
+              {showInsertCue && (
+                <span className="absolute left-0 top-0 bottom-0 w-[2px] bg-primary-blue-500 opacity-0 group-hover/glide:opacity-100 pointer-events-none z-10" />
+              )}
+
+              {isCustom ? (
+                <div className="w-[88%] h-[80%] rounded border border-dashed border-gray-400 bg-gray-50/50 flex items-center justify-center">
+                  <span className="text-[9px] font-semibold text-gray-500 leading-none tracking-wide uppercase">
+                    Custom · {Math.round(widthOf(glide) * 10) / 10}″
+                  </span>
+                </div>
+              ) : product?.packType === 'Slim can' && !glide.single ? (
+                <div className={`w-full h-full flex flex-col gap-[1px] overflow-hidden transition-opacity ${isDragSource ? 'opacity-40' : ''} ${isPicked ? 'opacity-50' : ''}`}>
+                  <img
+                    src={product.image}
+                    alt=""
+                    draggable={false}
+                    className="flex-1 min-h-0 w-full object-contain pointer-events-none"
+                  />
+                  <img
+                    src={product.image}
+                    alt=""
+                    draggable={false}
+                    className="flex-1 min-h-0 w-full object-contain pointer-events-none"
+                  />
+                </div>
+              ) : (
               <div
                 className={`w-full h-full overflow-hidden transition-opacity ${isDragSource ? 'opacity-40' : ''} ${isPicked ? 'opacity-50' : ''}`}
               >
                 <img
                   src={product.image}
                   alt=""
-                  className="w-full h-full object-contain"
+                  draggable={false}
+                  className="w-full h-full object-contain pointer-events-none"
                   onError={(e) => {
                     e.target.style.display = 'none';
                     e.target.parentNode.classList.add('flex', 'items-center', 'justify-center');
@@ -398,42 +517,86 @@ function ShelfRow({
                   }}
                 />
               </div>
+              )}
             </div>
           );
         })}
 
-        {/* Trailing empty zone (drop here / click to add) */}
-        {remainingPct > 0.1 && (
-          <div
-            style={{ width: `${remainingPct}%` }}
-            onMouseUp={() => {
-              if (activeTool === 'move') onShelfMouseUp(doorIdx, shelfIdx, null);
-            }}
-            onClick={() => {
-              if (activeTool === 'add' && selectedProduct && selectedFits) {
-                onAddGlide(doorIdx, shelfIdx, selectedProduct);
-              }
-            }}
-            className={`h-[52px] flex items-center justify-center transition-colors select-none ${
-              activeTool === 'add' && selectedProduct
-                ? selectedFits
-                  ? 'cursor-crosshair hover:bg-primary-blue-50/50'
-                  : 'bg-gray-100/40 cursor-not-allowed'
-                : ''
-            }`}
-            title={
-              activeTool === 'add' && selectedProduct
-                ? selectedFits
-                  ? `Click to add ${selectedProduct.name} (${selectedProduct.glideWidth}″)`
-                  : `Not enough room — ${Math.round(remaining * 10) / 10}″ left, needs ${selectedProduct.glideWidth}″`
-                : `${Math.round(remaining * 10) / 10}″ left`
-            }
-          >
-            <span className="text-[9px] text-gray-400/60 font-medium pointer-events-none">
-              {Math.round(remaining * 10) / 10}″
-            </span>
-          </div>
-        )}
+        {/* Trailing empty zone — accepts Add, Move drop, Duplicate paste,
+            Custom tool clicks, and a right-click → Mark all remaining as Custom.
+            Hidden once the shelf flips to auto-distribute mode (no useful slot
+            for "append" when glides are space-between). */}
+        {remainingPct > 0.1 && !isShelfNearFull && (() => {
+          const addArmed    = activeTool === 'add'    && selectedProduct;
+          const copyArmed   = activeTool === 'copy'   && pickedProduct;
+          const customArmed = activeTool === 'custom';
+          const moveArmed   = activeTool === 'move'   && isDragging;
+          const customFits  = customArmed && customIncrement <= remaining + 0.001;
+          let zoneClass = '';
+          let zoneTitle = `${Math.round(remaining * 10) / 10}″ left  (right-click → mark as Custom)`;
+
+          if (addArmed) {
+            zoneClass = selectedFits
+              ? 'cursor-crosshair hover:bg-primary-blue-50/50'
+              : 'bg-gray-100/40 cursor-not-allowed';
+            zoneTitle = selectedFits
+              ? `Click to add ${selectedProduct.name} (${selectedProduct.glideWidth}″)`
+              : `Not enough room — ${Math.round(remaining * 10) / 10}″ left, needs ${selectedProduct.glideWidth}″`;
+          } else if (copyArmed) {
+            zoneClass = pickedFits
+              ? 'cursor-copy hover:bg-green-50/50'
+              : 'bg-gray-100/40 cursor-not-allowed';
+            zoneTitle = pickedFits
+              ? `Click to duplicate ${pickedProduct.name} here (${pickedProduct.glideWidth}″)`
+              : `Not enough room — ${Math.round(remaining * 10) / 10}″ left, needs ${pickedProduct.glideWidth}″`;
+          } else if (customArmed) {
+            zoneClass = customFits
+              ? 'cursor-crosshair hover:bg-amber-50/40'
+              : 'bg-gray-100/40 cursor-not-allowed';
+            zoneTitle = customFits
+              ? `Click to extend Custom area by ${customIncrement}″ (right-click → fill remaining)`
+              : `Not enough room — ${Math.round(remaining * 10) / 10}″ left, needs ${customIncrement}″`;
+          } else if (moveArmed) {
+            zoneClass = 'cursor-grabbing bg-primary-blue-50/40 ring-2 ring-primary-blue-300 ring-inset';
+            zoneTitle = 'Release to drop here';
+          }
+
+          return (
+            <div
+              style={{ width: `${remainingPct}%` }}
+              onMouseEnter={() => {
+                // Mirror the per-glide mouseenter so dragging into an *empty*
+                // shelf (where the trailing zone is the only target) registers
+                // movement and the drop isn't silently rejected.
+                if (activeTool === 'move') onGlideMouseEnter(doorIdx, shelfIdx, null);
+              }}
+              onMouseUp={() => {
+                if (activeTool === 'move') onShelfMouseUp(doorIdx, shelfIdx, null);
+              }}
+              onClick={() => {
+                if (addArmed && selectedFits) {
+                  onAddGlide(doorIdx, shelfIdx, selectedProduct);
+                } else if (copyArmed) {
+                  // Pass null as the destination glide index — the handler treats this as "append".
+                  onDuplicateGlide(doorIdx, shelfIdx, null);
+                } else if (customArmed && customFits) {
+                  onAddCustomArea(doorIdx, shelfIdx, customIncrement);
+                }
+              }}
+              onContextMenu={(e) => {
+                // Right-click → reserve ALL remaining width as one Custom area.
+                e.preventDefault();
+                if (remaining >= 0.5) onAddCustomArea(doorIdx, shelfIdx, Infinity);
+              }}
+              className={`h-[52px] flex items-center justify-center transition-colors select-none ${zoneClass}`}
+              title={zoneTitle}
+            >
+              <span className="text-[9px] text-gray-400/60 font-medium pointer-events-none">
+                {Math.round(remaining * 10) / 10}″
+              </span>
+            </div>
+          );
+        })()}
       </div>
     </div>
   );
@@ -444,10 +607,19 @@ function DoorColumn({
   door, doorIdx, selectedProduct, activeTool,
   onAddGlide, onRemoveGlide, onDuplicateGlide,
   selectedGlides, onGlideClick,
-  pickedGlide, dragSource, dragOver,
+  pickedGlide, pickedProduct, dragSource, dragOver,
   onGlideMouseDown, onGlideMouseEnter, onShelfMouseUp,
+  customIncrement, onAddCustomArea,
+  onAddShelfToDoor, onRemoveShelf, maxShelves,
 }) {
-  const facingCount = door.shelves.reduce((acc, s) => acc + (s.glides?.length || 0), 0);
+  const facingCount = door.shelves.reduce(
+    (acc, s) => acc + (s.glides?.reduce((sum, g) => sum + facingsOf(g), 0) || 0),
+    0
+  );
+  const customInches = door.shelves.reduce(
+    (acc, s) => acc + (s.glides?.filter((g) => g._type === 'custom').reduce((sum, g) => sum + (g.width || 0), 0) || 0),
+    0
+  );
   const shelfCount = door.shelves.length;
 
   return (
@@ -458,12 +630,12 @@ function DoorColumn({
       </div>
 
       {/* Cooler door frame */}
-      <div className="relative flex flex-col rounded-md overflow-hidden border-[3px] border-gray-500 shadow-[0_4px_12px_rgba(0,0,0,0.18)]">
+      <div className="relative flex flex-col rounded-md overflow-hidden border-[3px] border-[#EAECF0]">
         {/* Top rail */}
-        <div className="h-[6px] bg-gradient-to-b from-gray-400 to-gray-500 shrink-0" />
+        <div className="h-[6px] bg-[#EAECF0] shrink-0" />
 
         {/* Glass panel */}
-        <div className="relative flex flex-col bg-gradient-to-b from-[#E8F2FF] to-[#F0F6FF]">
+        <div className="relative flex flex-col bg-white p-1">
           {/* Door handle — vertical chrome bar on the right */}
           <div
             className="absolute right-[6px] top-1/2 -translate-y-1/2 z-10 pointer-events-none"
@@ -486,19 +658,41 @@ function DoorColumn({
               selectedGlides={selectedGlides}
               onGlideClick={onGlideClick}
               pickedGlide={pickedGlide}
+              pickedProduct={pickedProduct}
               dragSource={dragSource}
               dragOver={dragOver}
               onGlideMouseDown={onGlideMouseDown}
               onGlideMouseEnter={onGlideMouseEnter}
               onShelfMouseUp={onShelfMouseUp}
+              customIncrement={customIncrement}
+              onAddCustomArea={onAddCustomArea}
+              onRemoveShelf={onRemoveShelf}
             />
           ))}
+
+          {/* + Add shelf button — inside the glass panel, above the bottom rail */}
+          <button
+            type="button"
+            onClick={() => onAddShelfToDoor?.(doorIdx)}
+            disabled={shelfCount >= (maxShelves || 10)}
+            className={`flex items-center justify-center gap-1 h-[20px] border-t border-dashed border-gray-300/60 text-[10px] font-medium transition-colors bg-transparent ${
+              shelfCount >= (maxShelves || 10)
+                ? 'text-gray-300 cursor-not-allowed'
+                : 'text-gray-500 hover:bg-primary-blue-50/40 hover:text-primary-blue-600 cursor-pointer'
+            }`}
+            title={shelfCount >= (maxShelves || 10) ? `Max ${maxShelves || 10} shelves per door` : 'Add a shelf to this door'}
+          >
+            <svg width="10" height="10" viewBox="0 0 10 10" fill="none">
+              <path d="M5 2v6M2 5h6" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"/>
+            </svg>
+            Add shelf
+          </button>
         </div>
 
         {/* Bottom rail + stats */}
-        <div className="h-[22px] flex items-center justify-center bg-gradient-to-b from-gray-500 to-gray-600 shrink-0">
-          <span className="text-[10px] text-gray-200 font-medium">
-            {facingCount} facings · {shelfCount} shelves
+        <div className="h-[32px] flex items-center justify-center bg-[#0B2148] shrink-0">
+          <span className="text-[11px] text-white font-medium">
+            {facingCount} facings{customInches > 0 ? ` · ${Math.round(customInches * 10) / 10}″ custom` : ''} · {shelfCount} shelves
           </span>
         </div>
       </div>
@@ -512,14 +706,16 @@ export default function PlanogramView({ doorSet, regionName, onExit }) {
   const [selectedProduct, setSelectedProduct] = useState(null);
   const [zoom, setZoom] = useState(100);
   const [productSearch, setProductSearch] = useState('');
-  const [shelvesPerDoor, setShelvesPerDoor] = useState(doorSet?.defaultShelf || 7);
   const [focusedDoor, setFocusedDoor] = useState('all');
   const [categoryFilter, setCategoryFilter] = useState('all');
   const [sizeFilter, setSizeFilter] = useState('all');
   const [showRecentlyUsed, setShowRecentlyUsed] = useState(false);
   const [recentlyUsed, setRecentlyUsed] = useState([]);
-  const [configOpen, setConfigOpen] = useState(true);
   const [viewDoorsOpen, setViewDoorsOpen] = useState(true);
+  // When a Slim-can product is the active selection, this toggle switches
+  // between adding single cans (default) and stacked pairs.
+  const [slimSingleMode, setSlimSingleMode] = useState(true);
+  const [vendorMixOpen, setVendorMixOpen] = useState(true);
   const [selectedGlides, setSelectedGlides] = useState([]); // [{doorIdx, shelfIdx, glideIdx}]
   const [pickedGlide, setPickedGlide] = useState(null);     // {doorIdx, shelfIdx, glideIdx}
   const [layout, setLayout] = useState(() =>
@@ -580,12 +776,18 @@ export default function PlanogramView({ doorSet, regionName, onExit }) {
   }
 
   const tools = [
-    { id: 'select', label: 'Select', icon: CursorIcon },
-    { id: 'add', label: 'Add Product', icon: PlusBoxIcon },
-    { id: 'move', label: 'Move', icon: MoveIcon },
-    { id: 'copy', label: 'Duplicate', icon: CopyIcon },
-    { id: 'remove', label: 'Remove', icon: TrashIcon },
+    { id: 'select', label: 'Select',      tip: 'Click facings to multi-select; bulk-remove from the action bar.', icon: CursorIcon },
+    { id: 'add',    label: 'Add Product', tip: 'Click a shelf to add one facing of the selected product.',          icon: PlusBoxIcon },
+    { id: 'custom', label: 'Custom Area', tip: 'Click a shelf to reserve 2.5″ for the store owner. Click again to extend.', icon: CustomIcon },
+    { id: 'move',   label: 'Move',        tip: 'Drag a facing to reorder, or drop it onto another shelf.',           icon: MoveIcon },
+    { id: 'remove', label: 'Remove',      tip: 'Click a facing to remove it.',                                       icon: TrashIcon },
   ];
+
+  // Each Custom-tool click reserves one increment of free space (= smallest
+  // glide width, 2.5″). Consecutive clicks at the end of a shelf coalesce into
+  // a single growing Custom block, mirroring how repeated Add-Product clicks
+  // build up a lane of the same product.
+  const CUSTOM_INCREMENT = 2.5;
 
   const [dragSource, setDragSource] = useState(null);
   const [dragOver, setDragOver] = useState(null);
@@ -593,8 +795,9 @@ export default function PlanogramView({ doorSet, regionName, onExit }) {
   const dragMovedRef = useRef(false);
 
   // ─── Glide helpers ──────────────────────────────────────────────────────
+  // (glideWidthOf and facingsOf are module-scoped below — used by ShelfRow + DoorColumn too)
   function usedWidth(shelf) {
-    return (shelf?.glides || []).reduce((sum, g) => sum + (g.product?.glideWidth || 0), 0);
+    return (shelf?.glides || []).reduce((sum, g) => sum + glideWidthOf(g), 0);
   }
   function remainingWidth(shelf) {
     return Math.max(0, SHELF_WIDTH_INCHES - usedWidth(shelf));
@@ -603,6 +806,10 @@ export default function PlanogramView({ doorSet, regionName, onExit }) {
     if (!product?.glideWidth) return false;
     // Floating point tolerance — 0.001 prevents 30 === 29.999... rejections.
     return usedWidth(shelf) + product.glideWidth <= SHELF_WIDTH_INCHES + 0.001;
+  }
+  function canAddCustom(shelf, widthIn) {
+    if (!widthIn || widthIn <= 0) return false;
+    return usedWidth(shelf) + widthIn <= SHELF_WIDTH_INCHES + 0.001;
   }
   function fmtIn(n) {
     return `${Math.round(n * 10) / 10}″`;
@@ -642,9 +849,11 @@ export default function PlanogramView({ doorSet, regionName, onExit }) {
         if (srcGlide && destShelf) {
           // Cross-shelf overflow check (intra-shelf reorder is always allowed)
           const isSameShelf = dragSource.doorIdx === doorIdx && dragSource.shelfIdx === shelfIdx;
-          if (!isSameShelf && !canAddGlide(destShelf, srcGlide.product)) {
-            const need = srcGlide.product?.glideWidth || 0;
-            showToast(`Shelf is full — ${fmtIn(remainingWidth(destShelf))} left, this product needs ${fmtIn(need)}`, 'error');
+          const need = glideWidthOf(srcGlide);
+          const wouldFit = usedWidth(destShelf) + need <= SHELF_WIDTH_INCHES + 0.001;
+          if (!isSameShelf && !wouldFit) {
+            const label = srcGlide._type === 'custom' ? 'this custom area' : 'this product';
+            showToast(`Shelf is full — ${fmtIn(remainingWidth(destShelf))} left, ${label} needs ${fmtIn(need)}`, 'error');
           } else {
             updateLayout((prev) => {
               const next = JSON.parse(JSON.stringify(prev));
@@ -687,7 +896,8 @@ export default function PlanogramView({ doorSet, regionName, onExit }) {
     });
   }
 
-  function handleAddGlide(doorIdx, shelfIdx, product) {
+  // `insertAt` is the index to splice the new glide BEFORE; null/undefined → append.
+  function handleAddGlide(doorIdx, shelfIdx, product, insertAt = null) {
     const shelf = layout[doorIdx]?.shelves[shelfIdx];
     if (!shelf || !product) return;
     if (!canAddGlide(shelf, product)) {
@@ -699,10 +909,49 @@ export default function PlanogramView({ doorSet, regionName, onExit }) {
     }
     updateLayout((prev) => {
       const next = JSON.parse(JSON.stringify(prev));
-      next[doorIdx].shelves[shelfIdx].glides.push({ product: { ...product } });
+      const glides = next[doorIdx].shelves[shelfIdx].glides;
+      const entry = { product: { ...product } };
+      // Honour slim-single mode for slim cans only — other pack types ignore it.
+      if (product.packType === 'Slim can' && slimSingleMode) entry.single = true;
+      if (insertAt == null) glides.push(entry);
+      else glides.splice(insertAt, 0, entry);
       return next;
     });
     trackRecentlyUsed(product.id);
+  }
+
+  // Add (or grow) a Custom area at the trailing end of a shelf.
+  //   - Each call reserves `CUSTOM_INCREMENT` inches by default.
+  //   - If the last glide is already a Custom block, its width grows in place
+  //     so consecutive clicks read as a single block (UX parity with adding
+  //     more facings of the same product).
+  //   - Pass `Infinity` for the right-click "fill remaining" shortcut.
+  function handleAddCustomArea(doorIdx, shelfIdx, requestedWidth = CUSTOM_INCREMENT, insertAt = null) {
+    const shelf = layout[doorIdx]?.shelves[shelfIdx];
+    if (!shelf) return;
+    const rem = remainingWidth(shelf);
+    const w = Math.round(Math.min(requestedWidth, rem) * 10) / 10;
+    if (w < 0.5) {
+      showToast(`Shelf is full — ${fmtIn(rem)} left`, 'error');
+      return;
+    }
+    updateLayout((prev) => {
+      const next = JSON.parse(JSON.stringify(prev));
+      const glides = next[doorIdx].shelves[shelfIdx].glides;
+      if (insertAt == null) {
+        // Append path: auto-coalesce with the trailing custom block.
+        const last = glides[glides.length - 1];
+        if (last && last._type === 'custom') {
+          last.width = Math.round((last.width + w) * 10) / 10;
+        } else {
+          glides.push({ _type: 'custom', width: w });
+        }
+      } else {
+        // Explicit insertion at a specific index — always a fresh block.
+        glides.splice(insertAt, 0, { _type: 'custom', width: w });
+      }
+      return next;
+    });
   }
 
   function handleRemoveGlide(doorIdx, shelfIdx, glideIdx) {
@@ -714,10 +963,11 @@ export default function PlanogramView({ doorSet, regionName, onExit }) {
   }
 
   function handleDuplicateGlide(doorIdx, shelfIdx, glideIdx) {
-    // Two-step copy: click source first, then a destination shelf to append a duplicate.
-    const source = layout[doorIdx]?.shelves[shelfIdx]?.glides[glideIdx];
+    // Two-step copy: click source first, then a destination shelf to add a duplicate.
+    // `glideIdx === null` from the trailing-zone path means "append"; otherwise "insert before this glide".
+    const source = glideIdx == null ? null : layout[doorIdx]?.shelves[shelfIdx]?.glides[glideIdx];
 
-    if (!pickedGlide && source && source._type !== 'custom') {
+    if (!pickedGlide && source && source._type !== 'custom' && source.product) {
       setPickedGlide({ doorIdx, shelfIdx, glideIdx });
       return;
     }
@@ -737,7 +987,10 @@ export default function PlanogramView({ doorSet, regionName, onExit }) {
       updateLayout((prev) => {
         const next = JSON.parse(JSON.stringify(prev));
         const src = next[pickedGlide.doorIdx].shelves[pickedGlide.shelfIdx].glides[pickedGlide.glideIdx];
-        next[doorIdx].shelves[shelfIdx].glides.push({ product: { ...src.product } });
+        const entry = { product: { ...src.product } };
+        const destGlides = next[doorIdx].shelves[shelfIdx].glides;
+        if (glideIdx == null) destGlides.push(entry);
+        else destGlides.splice(glideIdx, 0, entry);
         return next;
       });
       setPickedGlide(null);
@@ -748,6 +1001,67 @@ export default function PlanogramView({ doorSet, regionName, onExit }) {
     if (selectedGlides.length === 0) return;
     // No-op: custom marking on glides isn't a meaningful op in glide model.
     // Kept for API parity; just clears selection.
+    setSelectedGlides([]);
+  }
+
+  // Replace every selected (non-custom) glide's product with the library-selected
+  // product. Custom areas in the selection are skipped — they stay reserved.
+  // Validates per-shelf that the swap doesn't overflow the 30″ budget.
+  function handleApplySelectedProduct() {
+    if (!selectedProduct) {
+      showToast('Pick a product in the library first', 'error');
+      return;
+    }
+    if (selectedGlides.length === 0) return;
+
+    // Group selected glides by shelf and filter out custom ones (immutable).
+    const byShelf = new Map();
+    for (const s of selectedGlides) {
+      const shelf = layout[s.doorIdx]?.shelves[s.shelfIdx];
+      const glide = shelf?.glides[s.glideIdx];
+      if (!shelf || !glide || glide._type === 'custom') continue;
+      const k = `${s.doorIdx}|${s.shelfIdx}`;
+      if (!byShelf.has(k)) byShelf.set(k, { shelf, indices: [] });
+      byShelf.get(k).indices.push(s.glideIdx);
+    }
+
+    if (byShelf.size === 0) {
+      showToast('No editable facings selected', 'error');
+      return;
+    }
+
+    // Validate every affected shelf fits the new total width.
+    const newW = selectedProduct.glideWidth;
+    for (const { shelf, indices } of byShelf.values()) {
+      const removedWidth = indices.reduce((sum, i) => sum + (shelf.glides[i].product?.glideWidth || 0), 0);
+      const projected = usedWidth(shelf) - removedWidth + indices.length * newW;
+      if (projected > SHELF_WIDTH_INCHES + 0.001) {
+        showToast(
+          `Shelf would overflow — ${selectedProduct.name} (${newW}″) doesn't fit in place of the selected facings`,
+          'error'
+        );
+        return;
+      }
+    }
+
+    updateLayout((prev) => {
+      const next = JSON.parse(JSON.stringify(prev));
+      const isSlimSingle = selectedProduct.packType === 'Slim can' && slimSingleMode;
+      for (const [k, { indices }] of byShelf) {
+        const [d, sh] = k.split('|').map(Number);
+        for (const i of indices) {
+          const entry = { product: { ...selectedProduct } };
+          if (isSlimSingle) entry.single = true;
+          next[d].shelves[sh].glides[i] = entry;
+        }
+      }
+      return next;
+    });
+    trackRecentlyUsed(selectedProduct.id);
+    // Count facings actually written — slim cans count as 2 per glide.
+    const glidesApplied = [...byShelf.values()].reduce((sum, { indices }) => sum + indices.length, 0);
+    const facingsApplied = glidesApplied * facingsOf({ product: selectedProduct });
+    showToast(`Applied ${selectedProduct.name} to ${facingsApplied} facing${facingsApplied === 1 ? '' : 's'}`);
     setSelectedGlides([]);
   }
 
@@ -780,22 +1094,161 @@ export default function PlanogramView({ doorSet, regionName, onExit }) {
     setZoom((z) => Math.max(z - 10, 50));
   }
 
-  function handleShelvesChange(count) {
-    setShelvesPerDoor(count);
-    updateLayout((prev) =>
-      prev.map((door) => {
-        const currentShelves = door.shelves;
-        if (count > currentShelves.length) {
-          const newShelves = Array.from({ length: count - currentShelves.length }, (_, i) => ({
-            id: `${door.id}-shelf-${currentShelves.length + i + 1}`,
-            label: `Shelf ${currentShelves.length + i + 1}`,
-            glides: [],
-          }));
-          return { ...door, shelves: [...currentShelves, ...newShelves] };
-        }
-        return { ...door, shelves: currentShelves.slice(0, count) };
-      })
-    );
+  // ─── Export to PDF ────────────────────────────────────────────────────
+  const [exportMenuOpen, setExportMenuOpen] = useState(false);
+  const [exporting, setExporting] = useState(false);
+  const exportMenuRef = useRef(null);
+  useEffect(() => {
+    if (!exportMenuOpen) return;
+    function handleClick(e) {
+      if (exportMenuRef.current && !exportMenuRef.current.contains(e.target)) setExportMenuOpen(false);
+    }
+    document.addEventListener('mousedown', handleClick);
+    return () => document.removeEventListener('mousedown', handleClick);
+  }, [exportMenuOpen]);
+
+  async function captureNode(node) {
+    const { default: html2canvas } = await import('html2canvas');
+    return html2canvas(node, { backgroundColor: '#ffffff', scale: 2, useCORS: true });
+  }
+
+  function downloadBlob(blob, filename) {
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  }
+
+  function safeFile(s) { return String(s || '').replace(/[^a-z0-9-_]+/gi, '_'); }
+
+  async function exportDoorIndex(doorIdx) {
+    setExportMenuOpen(false);
+    if (focusedDoor !== 'all' && focusedDoor !== doorIdx) {
+      showToast('Switch to All Doors view to export a different door', 'error');
+      return;
+    }
+    const node = document.querySelector(`[data-door-idx="${doorIdx}"]`);
+    if (!node) {
+      showToast('Door not visible — switch to All Doors view first', 'error');
+      return;
+    }
+    setExporting(true);
+    try {
+      const canvas = await captureNode(node);
+      const { default: jsPDF } = await import('jspdf');
+      const pdf = new jsPDF({ orientation: 'portrait', unit: 'pt', format: 'letter' });
+      const pageW = pdf.internal.pageSize.getWidth();
+      const pageH = pdf.internal.pageSize.getHeight();
+      const margin = 36;
+      const maxW = pageW - margin * 2;
+      const maxH = pageH - margin * 2 - 40; // reserve room for header
+      const ratio = Math.min(maxW / canvas.width, maxH / canvas.height);
+      const w = canvas.width * ratio;
+      const h = canvas.height * ratio;
+      pdf.setFontSize(14);
+      pdf.text(`${doorSet?.title || `${doorSet?.doors || 6} Doors`} — ${regionName} · ${node.getAttribute('data-door-label') || `Door ${doorIdx + 1}`}`, margin, margin + 8);
+      pdf.addImage(canvas.toDataURL('image/png'), 'PNG', (pageW - w) / 2, margin + 30, w, h);
+      pdf.save(`planogram-${safeFile(regionName)}-${safeFile(node.getAttribute('data-door-label') || `door-${doorIdx + 1}`)}.pdf`);
+      showToast(`Exported ${node.getAttribute('data-door-label') || `Door ${doorIdx + 1}`}`);
+    } catch (err) {
+      console.error(err);
+      showToast('Export failed — see console', 'error');
+    } finally {
+      setExporting(false);
+    }
+  }
+
+  async function exportAllDoors() {
+    setExportMenuOpen(false);
+    if (focusedDoor !== 'all') {
+      showToast('Switch to All Doors view to export the full set', 'error');
+      return;
+    }
+    setExporting(true);
+    try {
+      const nodes = layout.map((_, i) => document.querySelector(`[data-door-idx="${i}"]`)).filter(Boolean);
+      if (nodes.length === 0) throw new Error('No door nodes found');
+      const { default: jsPDF } = await import('jspdf');
+      const pdf = new jsPDF({ orientation: 'portrait', unit: 'pt', format: 'letter' });
+      const pageW = pdf.internal.pageSize.getWidth();
+      const pageH = pdf.internal.pageSize.getHeight();
+      const margin = 36;
+      const maxW = pageW - margin * 2;
+      const maxH = pageH - margin * 2 - 40;
+      for (let i = 0; i < nodes.length; i++) {
+        const canvas = await captureNode(nodes[i]);
+        const ratio = Math.min(maxW / canvas.width, maxH / canvas.height);
+        const w = canvas.width * ratio;
+        const h = canvas.height * ratio;
+        if (i > 0) pdf.addPage();
+        pdf.setFontSize(14);
+        pdf.text(`${doorSet?.title || `${doorSet?.doors || 6} Doors`} — ${regionName} · ${nodes[i].getAttribute('data-door-label') || `Door ${i + 1}`}`, margin, margin + 8);
+        pdf.addImage(canvas.toDataURL('image/png'), 'PNG', (pageW - w) / 2, margin + 30, w, h);
+      }
+      pdf.save(`planogram-${safeFile(regionName)}-all-doors.pdf`);
+      showToast(`Exported ${nodes.length} doors to PDF`);
+    } catch (err) {
+      console.error(err);
+      showToast('Export failed — see console', 'error');
+    } finally {
+      setExporting(false);
+    }
+  }
+
+  const MAX_SHELVES_PER_DOOR = 10;
+
+  function handleAddShelfToDoor(doorIdx) {
+    const door = layout[doorIdx];
+    if (!door) return;
+    if (door.shelves.length >= MAX_SHELVES_PER_DOOR) {
+      showToast(`Each door can hold at most ${MAX_SHELVES_PER_DOOR} shelves`, 'error');
+      return;
+    }
+    updateLayout((prev) => {
+      const next = JSON.parse(JSON.stringify(prev));
+      const d = next[doorIdx];
+      const n = d.shelves.length + 1;
+      d.shelves.push({ id: `${d.id}-shelf-${n}`, label: `Shelf ${n}`, glides: [] });
+      return next;
+    });
+  }
+
+  function handleRemoveShelfRequest(doorIdx, shelfIdx) {
+    const shelf = layout[doorIdx]?.shelves[shelfIdx];
+    if (!shelf) return;
+    if (layout[doorIdx].shelves.length <= 1) {
+      showToast('Each door must keep at least one shelf', 'error');
+      return;
+    }
+    const facingTotal = shelf.glides.reduce((sum, g) => sum + facingsOf(g), 0);
+    const customWidth = shelf.glides.reduce((sum, g) => sum + (g._type === 'custom' ? g.width : 0), 0);
+    if (facingTotal === 0 && customWidth === 0) {
+      removeShelf(doorIdx, shelfIdx);
+      return;
+    }
+    const fragments = [];
+    if (facingTotal > 0) fragments.push(`${facingTotal} facing${facingTotal === 1 ? '' : 's'}`);
+    if (customWidth > 0) fragments.push(`${Math.round(customWidth * 10) / 10}″ custom`);
+    setConfirmAction({
+      title: `Remove Shelf ${shelfIdx + 1} from Door ${doorIdx + 1}?`,
+      message: `${fragments.join(' + ')} will be deleted.`,
+      confirmLabel: 'Yes, Remove',
+      run: () => removeShelf(doorIdx, shelfIdx),
+    });
+  }
+
+  function removeShelf(doorIdx, shelfIdx) {
+    updateLayout((prev) => {
+      const next = JSON.parse(JSON.stringify(prev));
+      next[doorIdx].shelves.splice(shelfIdx, 1);
+      // Re-label remaining shelves for sanity.
+      next[doorIdx].shelves.forEach((s, i) => { s.label = `Shelf ${i + 1}`; });
+      return next;
+    });
   }
 
   function switchTool(toolId) {
@@ -843,7 +1296,9 @@ export default function PlanogramView({ doorSet, regionName, onExit }) {
 
   const allCategoryNames = productCategories.map((c) => c.name);
   // Only show pack types that actually appear in the catalogue (keeps order from PACK_TYPES).
-  const availablePackTypes = PACK_TYPES.filter((pt) => allProducts.some((p) => p.packType === pt));
+  const availablePackTypes = PACK_TYPES
+    .filter((pt) => allProducts.some((p) => p.packType === pt))
+    .map((pt) => ({ value: pt, label: PACK_TYPE_LABELS[pt] || pt }));
 
   const filteredProducts = allProducts.filter((p) => {
     if (showRecentlyUsed && !recentlyUsed.includes(p.id)) return false;
@@ -868,9 +1323,41 @@ export default function PlanogramView({ doorSet, regionName, onExit }) {
   }
 
   const totalFacings = layout.reduce(
-    (acc, door) => acc + door.shelves.reduce((a, s) => a + (s.glides?.length || 0), 0),
+    (acc, door) => acc + door.shelves.reduce(
+      (a, s) => a + (s.glides?.reduce((sum, g) => sum + facingsOf(g), 0) || 0),
+      0
+    ),
     0
   );
+
+  // Sum facings per vendor across the whole layout.
+  const vendorMix = (() => {
+    const acc = Object.fromEntries(VENDORS.map((v) => [v, 0]));
+    for (const door of layout) {
+      for (const shelf of door.shelves) {
+        for (const g of shelf.glides || []) {
+          if (g._type === 'custom') continue;
+          const v = g.product?.vendor || 'Other';
+          const key = VENDORS.includes(v) ? v : 'Other';
+          acc[key] += facingsOf(g);
+        }
+      }
+    }
+    return acc;
+  })();
+  const totalCustomInches = layout.reduce(
+    (acc, door) => acc + door.shelves.reduce(
+      (a, s) => a + (s.glides?.filter((g) => g._type === 'custom').reduce((sum, g) => sum + (g.width || 0), 0) || 0),
+      0
+    ),
+    0
+  );
+
+  // Source product for an in-progress Duplicate operation. Used by ShelfRow's
+  // trailing empty zone to render a "click to duplicate" affordance.
+  const pickedProduct = pickedGlide
+    ? layout[pickedGlide.doorIdx]?.shelves[pickedGlide.shelfIdx]?.glides[pickedGlide.glideIdx]?.product
+    : null;
 
   const showBulkPanel = activeTool === 'select' && selectedGlides.length > 0;
 
@@ -890,7 +1377,7 @@ export default function PlanogramView({ doorSet, regionName, onExit }) {
         </div>
         <div className="flex items-center gap-2">
           <Badge state="Default">
-            {totalFacings} facings
+            {totalFacings} facings{totalCustomInches > 0 ? ` · ${Math.round(totalCustomInches * 10) / 10}″ custom` : ''}
           </Badge>
           <Button
             type="Outline"
@@ -905,7 +1392,7 @@ export default function PlanogramView({ doorSet, regionName, onExit }) {
                 message: 'This will remove all products from this planogram and return you to the previous screen.',
                 confirmLabel: 'Yes, Discard',
                 run: () => {
-                  setLayout(generateShelfLayout(doorSet?.doors || 6, shelvesPerDoor));
+                  setLayout(generateShelfLayout(doorSet?.doors || 6, doorSet?.defaultShelf || 7));
                   historyRef.current = [];
                   futureRef.current = [];
                   setHistoryLen(0);
@@ -958,7 +1445,7 @@ export default function PlanogramView({ doorSet, regionName, onExit }) {
         <div className="ml-auto flex items-center">
           <div className="flex items-center gap-1">
             {tools.map((tool) => (
-              <Tooltip key={tool.id} text={tool.label} position="down">
+              <Tooltip key={tool.id} text={tool.tip || tool.label} position="down">
                 <button
                   onClick={() => switchTool(tool.id)}
                   className={`flex items-center gap-1.5 h-8 px-2.5 rounded-lg border cursor-pointer transition-colors text-xs font-medium ${
@@ -972,6 +1459,7 @@ export default function PlanogramView({ doorSet, regionName, onExit }) {
                 </button>
               </Tooltip>
             ))}
+
           </div>
 
           <div className="w-px h-5 bg-gray-200 mx-3" />
@@ -1022,6 +1510,60 @@ export default function PlanogramView({ doorSet, regionName, onExit }) {
               </button>
             </Tooltip>
           </div>
+
+          <div className="w-px h-5 bg-gray-200 mx-3" />
+
+          {/* Export dropdown */}
+          <div className="relative" ref={exportMenuRef}>
+            <Tooltip text={exporting ? 'Generating PDF…' : 'Download as PDF'} position="down">
+              <button
+                onClick={() => !exporting && setExportMenuOpen((o) => !o)}
+                disabled={exporting}
+                className={`flex items-center gap-1.5 h-8 px-2.5 rounded-lg border border-gray-200 bg-white text-xs font-medium text-gray-700 transition-colors ${
+                  exporting ? 'opacity-60 cursor-wait' : 'hover:bg-gray-50 cursor-pointer'
+                }`}
+              >
+                <ExportIcon />
+                {exporting ? 'Exporting…' : 'Export'}
+                <svg width="10" height="6" viewBox="0 0 10 6" fill="none" className={`shrink-0 transition-transform duration-150 ${exportMenuOpen ? 'rotate-180' : ''}`}>
+                  <path d="M1 1L5 5L9 1" stroke="#667085" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+                </svg>
+              </button>
+            </Tooltip>
+            {exportMenuOpen && (
+              <div className="absolute right-0 top-9 z-30 bg-white border border-gray-200 rounded-lg shadow-[0px_4px_12px_rgba(0,0,0,0.1)] py-1 min-w-[200px] max-h-[280px] overflow-y-auto">
+                <button
+                  onClick={exportAllDoors}
+                  disabled={focusedDoor !== 'all'}
+                  title={focusedDoor !== 'all' ? 'Switch to All Doors view to export the full set' : undefined}
+                  className={`flex items-center justify-between w-full px-3 py-2 text-xs font-semibold border-none font-[inherit] transition-colors ${
+                    focusedDoor !== 'all' ? 'text-gray-300 cursor-not-allowed bg-transparent' : 'text-gray-900 hover:bg-gray-50 cursor-pointer bg-transparent'
+                  }`}
+                >
+                  <span>All {layout.length} doors</span>
+                  <span className="text-[10px] text-gray-400 font-normal">multi-page PDF</span>
+                </button>
+                <div className="h-px bg-gray-100 my-1" />
+                {layout.map((door, idx) => {
+                  const disabled = focusedDoor !== 'all' && focusedDoor !== idx;
+                  return (
+                    <button
+                      key={door.id}
+                      onClick={() => exportDoorIndex(idx)}
+                      disabled={disabled}
+                      title={disabled ? 'Switch to All Doors view to export a different door' : undefined}
+                      className={`flex items-center justify-between w-full px-3 py-1.5 text-xs font-medium border-none font-[inherit] transition-colors ${
+                        disabled ? 'text-gray-300 cursor-not-allowed bg-transparent' : 'text-gray-900 hover:bg-gray-50 cursor-pointer bg-transparent'
+                      }`}
+                    >
+                      <span>{door.label}</span>
+                      <span className="text-[10px] text-gray-400 font-normal">PDF</span>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+          </div>
         </div>
       </div>
 
@@ -1029,36 +1571,6 @@ export default function PlanogramView({ doorSet, regionName, onExit }) {
       <div className="flex flex-1 min-h-0">
         {/* Left sidebar */}
         <div className="w-[340px] shrink-0 border-r border-gray-200 flex flex-col bg-white">
-
-          {/* Shelf config — collapsible */}
-          <div className="px-3 py-4 border-b border-gray-200">
-            <button
-              onClick={() => setConfigOpen(!configOpen)}
-              className="flex items-center justify-between w-full bg-transparent border-none cursor-pointer p-0 font-[inherit]"
-            >
-              <span className="text-sm font-semibold text-gray-700">Configuration</span>
-              <svg width="12" height="12" viewBox="0 0 12 12" fill="none" className={`transition-transform duration-200 ${configOpen ? '' : '-rotate-90'}`}>
-                <path d="M3 4.5L6 7.5L9 4.5" stroke="#9CA3AF" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round"/>
-              </svg>
-            </button>
-            {configOpen && (
-              <div className="mt-2.5 space-y-2.5">
-                <div className="flex items-center justify-between">
-                  <span className="text-xs text-gray-500">Shelves per door</span>
-                  <SelectDropdown
-                    value={shelvesPerDoor}
-                    options={[3, 4, 5, 6, 7, 8, 9, 10]}
-                    onChange={handleShelvesChange}
-                  />
-                </div>
-                <div className="flex items-center justify-between">
-                  <span className="text-xs text-gray-500">Shelf width</span>
-                  <span className="text-xs font-semibold text-gray-900">{SHELF_WIDTH_INCHES}″</span>
-                </div>
-
-              </div>
-            )}
-          </div>
 
           {/* View Doors — collapsible */}
           <div className="px-3 py-4 border-b border-gray-200">
@@ -1104,6 +1616,48 @@ export default function PlanogramView({ doorSet, regionName, onExit }) {
                 ))}
               </div>
             </div>
+            )}
+          </div>
+
+          {/* Vendor mix */}
+          <div className="px-3 py-4 border-b border-gray-200">
+            <button
+              onClick={() => setVendorMixOpen(!vendorMixOpen)}
+              className="flex items-center justify-between w-full bg-transparent border-none cursor-pointer p-0 font-[inherit]"
+            >
+              <span className="text-sm font-semibold text-gray-700">Vendor mix</span>
+              <svg width="12" height="12" viewBox="0 0 12 12" fill="none" className={`transition-transform duration-200 ${vendorMixOpen ? '' : '-rotate-90'}`}>
+                <path d="M3 4.5L6 7.5L9 4.5" stroke="#9CA3AF" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round"/>
+              </svg>
+            </button>
+            {vendorMixOpen && (
+              totalFacings === 0 ? (
+                <p className="mt-2.5 text-[11px] text-gray-400">No facings placed yet.</p>
+              ) : (
+                <div className="mt-2.5 space-y-2">
+                  {VENDORS.map((v) => {
+                    const count = vendorMix[v] || 0;
+                    const pct = totalFacings > 0 ? (count / totalFacings) * 100 : 0;
+                    return (
+                      <div key={v}>
+                        <div className="flex items-center justify-between text-[11px] text-gray-600">
+                          <span className="font-medium">{v}</span>
+                          <span>
+                            <span className="font-semibold text-gray-900">{count}</span>
+                            <span className="text-gray-400"> · {pct < 1 && count > 0 ? '<1' : Math.round(pct)}%</span>
+                          </span>
+                        </div>
+                        <div className="mt-1 h-1.5 w-full rounded-full bg-gray-100 overflow-hidden">
+                          <div
+                            className="h-full rounded-full transition-all"
+                            style={{ width: `${pct}%`, backgroundColor: VENDOR_COLORS[v] }}
+                          />
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )
             )}
           </div>
 
@@ -1173,7 +1727,11 @@ export default function PlanogramView({ doorSet, regionName, onExit }) {
                   selected={selectedProduct?.id === product.id}
                   onSelect={(p) => {
                     setSelectedProduct(p);
-                    switchTool('add');
+                    // If the user is in the middle of a bulk Select op, stay in Select
+                    // so they can hit "Apply selected product". Otherwise default to Add.
+                    if (!(activeTool === 'select' && selectedGlides.length > 0)) {
+                      switchTool('add');
+                    }
                   }}
                 />
               ))}
@@ -1232,6 +1790,37 @@ export default function PlanogramView({ doorSet, regionName, onExit }) {
               <p className="text-xs text-primary-blue-500 mt-2 font-medium">
                 Click a shelf to place one facing ({fmtIn(selectedProduct.glideWidth || 0)} wide, max {getMaxFacings(selectedProduct)} per 30″ shelf).
               </p>
+
+              {/* Slim-can stack/single toggle — only shown for slim-can products */}
+              {selectedProduct.packType === 'Slim can' && (
+                <div className="mt-2 flex items-center gap-1.5">
+                  <span className="text-[11px] text-gray-500 font-medium">Mode:</span>
+                  <div className="inline-flex rounded-md border border-gray-200 overflow-hidden">
+                    <button
+                      onClick={() => setSlimSingleMode(false)}
+                      className={`h-6 px-2 text-[11px] font-semibold transition-colors border-none cursor-pointer ${
+                        !slimSingleMode
+                          ? 'bg-primary-blue-500 text-white'
+                          : 'bg-white text-gray-600 hover:bg-gray-50'
+                      }`}
+                      title="Each click adds 2 stacked cans (1 glide = 2 facings)"
+                    >
+                      Stacked × 2
+                    </button>
+                    <button
+                      onClick={() => setSlimSingleMode(true)}
+                      className={`h-6 px-2 text-[11px] font-semibold transition-colors border-none cursor-pointer border-l border-gray-200 ${
+                        slimSingleMode
+                          ? 'bg-primary-blue-500 text-white'
+                          : 'bg-white text-gray-600 hover:bg-gray-50'
+                      }`}
+                      title="Each click adds 1 single can (1 glide = 1 facing)"
+                    >
+                      Single
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
           ) : null}
         </div>
@@ -1246,7 +1835,7 @@ export default function PlanogramView({ doorSet, regionName, onExit }) {
                 style={{ transform: `scale(${zoom / 100})` }}
               >
                 {layout.map((door, doorIdx) => (
-                  <div key={door.id}>
+                  <div key={door.id} data-door-idx={doorIdx} data-door-label={door.label}>
                     <DoorColumn
                       door={door}
                       doorIdx={doorIdx}
@@ -1258,11 +1847,17 @@ export default function PlanogramView({ doorSet, regionName, onExit }) {
                       selectedGlides={selectedGlides}
                       onGlideClick={handleGlideClick}
                       pickedGlide={pickedGlide}
+                      pickedProduct={pickedProduct}
                       dragSource={dragSource}
                       dragOver={dragOver}
                       onGlideMouseDown={handleGlideMouseDown}
                       onGlideMouseEnter={handleGlideMouseEnter}
                       onShelfMouseUp={handleShelfMouseUp}
+                      customIncrement={CUSTOM_INCREMENT}
+                      onAddCustomArea={handleAddCustomArea}
+                      onAddShelfToDoor={handleAddShelfToDoor}
+                      onRemoveShelf={handleRemoveShelfRequest}
+                      maxShelves={MAX_SHELVES_PER_DOOR}
                     />
                   </div>
                 ))}
@@ -1301,7 +1896,7 @@ export default function PlanogramView({ doorSet, regionName, onExit }) {
                   className="inline-flex transition-transform origin-top"
                   style={{ transform: `scale(${(zoom / 100) * 1.6})` }}
                 >
-                  <div style={{ minWidth: '220px' }}>
+                  <div style={{ width: '320px' }} data-door-idx={focusedDoor} data-door-label={layout[focusedDoor]?.label}>
                     <DoorColumn
                       door={layout[focusedDoor]}
                       doorIdx={focusedDoor}
@@ -1313,11 +1908,17 @@ export default function PlanogramView({ doorSet, regionName, onExit }) {
                       selectedGlides={selectedGlides}
                       onGlideClick={handleGlideClick}
                       pickedGlide={pickedGlide}
+                      pickedProduct={pickedProduct}
                       dragSource={dragSource}
                       dragOver={dragOver}
                       onGlideMouseDown={handleGlideMouseDown}
                       onGlideMouseEnter={handleGlideMouseEnter}
                       onShelfMouseUp={handleShelfMouseUp}
+                      customIncrement={CUSTOM_INCREMENT}
+                      onAddCustomArea={handleAddCustomArea}
+                      onAddShelfToDoor={handleAddShelfToDoor}
+                      onRemoveShelf={handleRemoveShelfRequest}
+                      maxShelves={MAX_SHELVES_PER_DOOR}
                     />
                   </div>
                 </div>
@@ -1338,6 +1939,20 @@ export default function PlanogramView({ doorSet, regionName, onExit }) {
 
                 <div className="flex items-center self-stretch ml-[18px]">
                   <div className="flex items-center gap-2 py-3 flex-nowrap">
+
+                    <button
+                      onClick={handleApplySelectedProduct}
+                      disabled={!selectedProduct}
+                      title={selectedProduct ? `Replace selected facings with ${selectedProduct.name}` : 'Pick a product in the library first'}
+                      className={`flex items-center gap-1 px-2 py-1.5 rounded-lg text-sm font-normal text-white border-none font-[inherit] transition-colors whitespace-nowrap shrink-0 ${
+                        selectedProduct ? 'bg-[#182230] hover:bg-[#1e2d45] cursor-pointer' : 'bg-[#182230] opacity-40 cursor-not-allowed'
+                      }`}
+                    >
+                      <svg width="16" height="16" viewBox="0 0 16 16" fill="none" className="shrink-0">
+                        <path d="M2.5 8.5L6 12L13.5 4" stroke="white" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+                      </svg>
+                      Apply selected product
+                    </button>
 
                     <button
                       onClick={handleRemoveSelected}

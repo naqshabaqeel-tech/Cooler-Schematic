@@ -7,13 +7,11 @@ import ConfirmDialog from './components/ConfirmDialog';
 import ToastHost from './components/ToastHost';
 import YearsView from './components/views/YearsView';
 import RegionsView from './components/views/RegionsView';
-import LocationsView from './components/views/LocationsView';
 import PlanogramView from './components/views/PlanogramView';
 
 export default function App() {
   const [view, setView] = useState('years');
   const [currentYear, setCurrentYear] = useState(null);
-  const [locationInfo, setLocationInfo] = useState({ title: '', meta: '' });
   const [planogramInfo, setPlanogramInfo] = useState({ doorSet: null, regionName: '' });
   const [pendingNav, setPendingNav] = useState(null);
   const [showArchivedYears, setShowArchivedYears] = useState(false);
@@ -50,11 +48,6 @@ export default function App() {
     doGoYear(year);
   }
 
-  function goLocations(doorSetTitle, doorSetMeta) {
-    setLocationInfo({ title: doorSetTitle, meta: doorSetMeta });
-    setView('locations');
-  }
-
   function goPlanogram(doorSet, regionName) {
     setPlanogramInfo({ doorSet, regionName });
     setView('planogram');
@@ -71,10 +64,6 @@ export default function App() {
   } else if (view === 'regions') {
     breadcrumbs.push({ label: 'Cooler Schematic', onClick: goHome });
     breadcrumbs.push({ label: String(currentYear) });
-  } else if (view === 'locations') {
-    breadcrumbs.push({ label: 'Cooler Schematic', onClick: goHome });
-    breadcrumbs.push({ label: String(currentYear || 2026), onClick: () => goYear(currentYear || 2026) });
-    breadcrumbs.push({ label: locationInfo.title });
   } else if (view === 'planogram') {
     breadcrumbs.push({ label: 'Cooler Schematic', onClick: goHome });
     breadcrumbs.push({ label: String(currentYear || 2026), onClick: () => goYear(currentYear || 2026) });
@@ -110,12 +99,6 @@ export default function App() {
                 onEditPlanogram={goPlanogram}
                 regions={regions}
                 setRegions={setRegions}
-              />
-            )}
-            {view === 'locations' && (
-              <LocationsView
-                doorSetTitle={locationInfo.title}
-                doorSetMeta={locationInfo.meta}
               />
             )}
             {view === 'planogram' && (

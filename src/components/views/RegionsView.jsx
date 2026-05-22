@@ -146,6 +146,7 @@ export default function RegionsView({ year, onEditPlanogram, regions, setRegions
   const [form, setForm] = useState({ name: '', doors: '6', shelves: '7', notes: '' });
   const [errors, setErrors] = useState({});
   const [deleteTarget, setDeleteTarget] = useState(null);
+  const [publishAllConfirm, setPublishAllConfirm] = useState(null);
 
   function updateDoorSet(regionName, dsId, updater) {
     setRegions((prev) => prev.map((r) =>
@@ -269,9 +270,22 @@ export default function RegionsView({ year, onEditPlanogram, regions, setRegions
         <Button
           type="Outline"
           size="sm"
-          leadingIcon={<img src="/assets/Archive 2.svg" alt="" className="w-3.5 h-3.5" />}
+          onClick={() => {
+            const draftCount = regions.reduce(
+              (acc, r) => acc + r.doorSets.filter((ds) => ds.status === 'draft').length,
+              0
+            );
+            const regionsMissing = regions.filter((r) =>
+              r.doorSets.some((ds) => ds.status === 'draft')
+            ).length;
+            if (draftCount === 0) {
+              showToast('No draft door sets to publish', 'error');
+              return;
+            }
+            setPublishAllConfirm({ draftCount, regionsMissing });
+          }}
         >
-          Archived
+          Publish all
         </Button>
       </div>
 
@@ -448,6 +462,28 @@ export default function RegionsView({ year, onEditPlanogram, regions, setRegions
           removeDoorSet(currentRegion.name, deleteTarget._id);
           showToast(`${label} deleted`);
           setDeleteTarget(null);
+        }}
+      />
+
+      <ConfirmDialog
+        open={publishAllConfirm != null}
+        title="Publish all drafts?"
+        message={
+          publishAllConfirm
+            ? `${publishAllConfirm.draftCount} draft door set${publishAllConfirm.draftCount === 1 ? '' : 's'} across ${publishAllConfirm.regionsMissing} state${publishAllConfirm.regionsMissing === 1 ? '' : 's'} with missing planograms for ${year || 2026} will be marked Active.`
+            : ''
+        }
+        cancelLabel="Cancel"
+        confirmLabel="Yes, Publish All"
+        onCancel={() => setPublishAllConfirm(null)}
+        onConfirm={() => {
+          const { draftCount } = publishAllConfirm;
+          setRegions((prev) => prev.map((r) => ({
+            ...r,
+            doorSets: r.doorSets.map((ds) => ds.status === 'draft' ? { ...ds, status: 'active' } : ds),
+          })));
+          showToast(`Published ${draftCount} door set${draftCount === 1 ? '' : 's'}`);
+          setPublishAllConfirm(null);
         }}
       />
     </div>
