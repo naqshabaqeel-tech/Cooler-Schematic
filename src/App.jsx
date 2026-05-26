@@ -40,12 +40,67 @@ export default function App() {
       return { ...prev, [doorSetId]: next };
     });
   }
+
+  /**
+   * Clone every door set from `baseYear` (in any region listed in `regionNames`)
+   * into `newYear`. Each clone gets a fresh _id, its `year` set to `newYear`,
+   * and its planogram layout copied over so the new year inherits the same
+   * cooler layouts as the base.
+   *
+   * Side-effects:
+   *  - `regions`: pushes the new door sets onto each region.
+   *  - `doorSetLayouts`: writes new entries keyed by the new IDs.
+   */
+  function cloneSchematicFromYear(baseYear, newYear, regionNames) {
+    const cloneList = [];
+    for (const r of regions) {
+      if (!regionNames.includes(r.name)) continue;
+      for (const ds of r.doorSets) {
+        if ((ds.year || 2026) !== baseYear) continue;
+        const newId = `ds-${Date.now()}-${cloneList.length}-${Math.random().toString(36).slice(2, 6)}`;
+        cloneList.push({ regionName: r.name, oldId: ds._id, newId, ds });
+      }
+    }
+    if (cloneList.length === 0) return 0;
+
+    setRegions((prev) => prev.map((r) => {
+      const clones = cloneList.filter((c) => c.regionName === r.name);
+      if (clones.length === 0) return r;
+      return {
+        ...r,
+        doorSets: [
+          ...r.doorSets,
+          ...clones.map((c) => ({ ...c.ds, _id: c.newId, year: newYear })),
+        ],
+      };
+    }));
+    setDoorSetLayouts((prev) => {
+      const next = { ...prev };
+      for (const c of cloneList) {
+        if (prev[c.oldId]) {
+          next[c.newId] = JSON.parse(JSON.stringify(prev[c.oldId]));
+        }
+      }
+      return next;
+    });
+
+    return cloneList.length;
+  }
   const [pendingNav, setPendingNav] = useState(null);
   const [showArchivedYears, setShowArchivedYears] = useState(false);
+  const [newSchematicOpen, setNewSchematicOpen] = useState(false);
+  // All seed door sets belong to the current planning year (2026). New door
+  // sets created inside RegionsView are tagged with the active year, and the
+  // "New Schematic" flow can clone every door set from a base year into the
+  // new year with fresh IDs + copied layouts.
   const [regions, setRegions] = useState(() =>
     regionData.map((r) => ({
       ...r,
-      doorSets: r.doorSets.map((ds, i) => ({ ...ds, _id: ds._id || `${r.name}-${i}-${Date.now()}` })),
+      doorSets: r.doorSets.map((ds, i) => ({
+        ...ds,
+        _id: ds._id || `${r.name}-${i}-${Date.now()}`,
+        year: ds.year || 2026,
+      })),
     }))
   );
 
@@ -152,6 +207,7 @@ export default function App() {
             <SubNav
               showArchived={showArchivedYears}
               onToggleArchived={() => setShowArchivedYears((v) => !v)}
+              onNewSchematic={() => setNewSchematicOpen(true)}
             />
           )}
 
@@ -162,6 +218,10 @@ export default function App() {
                 onSelectYear={goYear}
                 showArchived={showArchivedYears}
                 onExitArchived={() => setShowArchivedYears(false)}
+                newSchematicOpen={newSchematicOpen}
+                onCloseNewSchematic={() => setNewSchematicOpen(false)}
+                regions={regions}
+                onCloneSchematic={cloneSchematicFromYear}
               />
             )}
             {view === 'regions' && (

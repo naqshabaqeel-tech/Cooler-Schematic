@@ -144,7 +144,7 @@ export default function RegionsView({ year, onEditPlanogram, regions, setRegions
   const [activeRegion, setActiveRegion] = useState(regions[0]?.name);
   const [panelMode, setPanelMode] = useState(null); // null | 'create' | 'edit'
   const [editingDs, setEditingDs] = useState(null);
-  const [form, setForm] = useState({ name: '', doors: '6', shelves: '7', notes: '', baseDoorSetId: 'empty' });
+  const [form, setForm] = useState({ doors: '6', shelves: '7', notes: '', baseDoorSetId: 'empty' });
   const [errors, setErrors] = useState({});
   const [deleteTarget, setDeleteTarget] = useState(null);
   const [publishAllConfirm, setPublishAllConfirm] = useState(null);
@@ -182,14 +182,16 @@ export default function RegionsView({ year, onEditPlanogram, regions, setRegions
   }
 
   function resetForm(defaultDoors = '6') {
-    setForm({ name: '', doors: defaultDoors, shelves: '7', notes: '', baseDoorSetId: 'empty' });
+    setForm({ doors: defaultDoors, shelves: '7', notes: '', baseDoorSetId: 'empty' });
     setErrors({});
   }
 
   function openCreate() {
     setEditingDs(null);
     const region = regions.find((r) => r.name === activeRegion);
-    const taken = new Set(region?.doorSets.map((ds) => ds.doors) || []);
+    const taken = new Set(
+      (region?.doorSets || []).filter((ds) => (ds.year || 2026) === (year || 2026)).map((ds) => ds.doors)
+    );
     const nextAvailable = [6, 7, 8, 9, 10, 11, 12].find((d) => !taken.has(d));
     resetForm(String(nextAvailable ?? 6));
     setPanelMode('create');
@@ -198,10 +200,10 @@ export default function RegionsView({ year, onEditPlanogram, regions, setRegions
   function openEdit(ds) {
     setEditingDs(ds);
     setForm({
-      name: ds.title || `${ds.doors} Doors`,
       doors: String(ds.doors),
       shelves: String(ds.defaultShelf),
       notes: ds.notes || '',
+      baseDoorSetId: 'empty',
     });
     setErrors({});
     setPanelMode('edit');
@@ -215,14 +217,15 @@ export default function RegionsView({ year, onEditPlanogram, regions, setRegions
 
   function validateForm() {
     const next = {};
-    if (!form.name.trim()) next.name = 'Name is required';
     const doorsN = parseInt(form.doors, 10);
     if (!doorsN || doorsN < 6 || doorsN > 12) {
       next.doors = 'Enter a number between 6 and 12';
     } else {
       const region = regions.find((r) => r.name === activeRegion);
-      const conflict = region?.doorSets.some((ds) => ds.doors === doorsN && ds._id !== editingDs?._id);
-      if (conflict) next.doors = `A ${doorsN}-door set already exists in this region`;
+      const conflict = region?.doorSets.some(
+        (ds) => ds.doors === doorsN && (ds.year || 2026) === (year || 2026) && ds._id !== editingDs?._id
+      );
+      if (conflict) next.doors = `A ${doorsN}-door set already exists in this region for ${year || 2026}`;
     }
     const shelvesN = parseInt(form.shelves, 10);
     if (!shelvesN || shelvesN < 1 || shelvesN > 12) next.shelves = 'Enter a number between 1 and 12';
@@ -236,10 +239,15 @@ export default function RegionsView({ year, onEditPlanogram, regions, setRegions
     if (panelMode === 'create') {
       const doorSet = {
         _id: `ds-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
-        title: form.name.trim(),
+        // Door sets are identified by their door count in the UI; no separate
+        // free-text name field anymore. `title` is kept as a derived fallback
+        // so existing code paths (toasts, breadcrumbs, picker labels, PDF
+        // export headers) keep working without branching on its presence.
+        title: `${valid.doorsN} Doors`,
         doors: valid.doorsN,
         defaultShelf: valid.shelvesN,
         status: 'draft',
+        year: year || 2026,
         activeDoors: 0,
         locations: 0,
         overrides: 0,
@@ -261,28 +269,33 @@ export default function RegionsView({ year, onEditPlanogram, regions, setRegions
       closePanel();
       onEditPlanogram?.(doorSet, activeRegion, seededLayout);
     } else if (panelMode === 'edit') {
-      const name = form.name.trim();
+      // Keep the derived "X Doors" title in sync with the (possibly new) door count.
       updateDoorSet(activeRegion, editingDs._id, (ds) => ({
         ...ds,
-        title: name,
+        title: `${valid.doorsN} Doors`,
         doors: valid.doorsN,
         defaultShelf: valid.shelvesN,
         notes: form.notes.trim() || undefined,
       }));
-      showToast(`${name} updated`);
+      showToast(`${valid.doorsN} Doors updated`);
       closePanel();
     }
   }
 
   const currentRegion = regions.find((r) => r.name === activeRegion) || regions[0];
 
-  // Door set capacity check
+  // Year scoping — door sets are tagged with a `year` field. The summary
+  // counters and the per-region grid only show door sets for the active year.
+  const currentYear = year || 2026;
+  const currentRegionDoorSets = (currentRegion?.doorSets || []).filter((ds) => (ds.year || 2026) === currentYear);
+
+  // Door set capacity check (per region, per year)
   const allAllowedDoors = [6, 7, 8, 9, 10, 11, 12];
-  const existingDoors = currentRegion.doorSets.map((ds) => ds.doors);
+  const existingDoors = currentRegionDoorSets.map((ds) => ds.doors);
   const isRegionFull = allAllowedDoors.every((d) => existingDoors.includes(d));
 
-  // Summary stats
-  const allDoorSets = regions.flatMap((r) => r.doorSets);
+  // Summary stats — also year-scoped.
+  const allDoorSets = regions.flatMap((r) => r.doorSets.filter((ds) => (ds.year || 2026) === currentYear));
   const activeCount = allDoorSets.filter((d) => d.status === 'active').length;
   const draftCount = allDoorSets.filter((d) => d.status === 'draft').length;
   const archiveCount = allDoorSets.filter((d) => d.status === 'archive').length;
@@ -379,7 +392,7 @@ export default function RegionsView({ year, onEditPlanogram, regions, setRegions
             </Button>
           </div>
           <div className="grid grid-cols-2 gap-4">
-            {currentRegion.doorSets.map((ds, i) => {
+            {currentRegionDoorSets.map((ds, i) => {
               const label = ds.title || `${ds.doors} Doors`;
               const menuItems = [
                 ds.status === 'active'
@@ -436,6 +449,10 @@ export default function RegionsView({ year, onEditPlanogram, regions, setRegions
         }
       >
         <div className="flex flex-col gap-6">
+          {/* Region context — replaces the old name-field helper text. */}
+          <p className="text-xs text-gray-500 -mb-2">
+            Region: <span className="font-semibold text-gray-900">{activeRegion}</span>
+          </p>
           {panelMode === 'create' && (
             <div className="flex flex-col gap-2">
               <label className="text-sm font-medium leading-5 text-gray-700">Start from</label>
@@ -462,15 +479,6 @@ export default function RegionsView({ year, onEditPlanogram, regions, setRegions
               </p>
             </div>
           )}
-          <Input
-            label="Door set name"
-            required
-            placeholder="e.g. 6 Doors — Beachside"
-            value={form.name}
-            onChange={(v) => { setForm((f) => ({ ...f, name: v })); if (errors.name) setErrors((e) => ({ ...e, name: undefined })); }}
-            helperText={`Region: ${activeRegion}`}
-            error={errors.name}
-          />
           <div className="grid grid-cols-2 gap-4">
             <Input
               label="Number of doors"

@@ -2,6 +2,7 @@ import { useState, useRef, useEffect, useCallback } from 'react';
 import Badge from '../Badge';
 import Button from '../Button';
 import ConfirmDialog from '../ConfirmDialog';
+import PlanogramTour from '../PlanogramTour';
 import { productCategories, generateShelfLayout, SHELF_WIDTH_INCHES, getMaxFacings, PACK_TYPES, PACK_TYPE_LABELS, VENDORS, VENDOR_COLORS } from '../../data/planogram';
 
 // Module-level glide helpers — used by both PlanogramView and the rendering subcomponents.
@@ -242,11 +243,20 @@ function WidthBadge({ widthMultiplier }) {
 }
 
 /* ─── Product Row ─── */
-function ProductRow({ product, selected, onSelect }) {
+function ProductRow({ product, selected, onSelect, onDragStart, onDragEnd }) {
   return (
     <button
       onClick={() => onSelect(product)}
-      className={`flex items-center gap-2.5 w-full px-3 py-2.5 border-none cursor-pointer font-[inherit] transition-colors border-b border-b-gray-100 ${
+      draggable
+      onDragStart={(e) => {
+        // dataTransfer text is a fallback ID; the real source-of-truth is the
+        // PlanogramView-level `libraryDragProduct` state set by `onDragStart`.
+        try { e.dataTransfer.setData('text/plain', product.id); } catch {}
+        e.dataTransfer.effectAllowed = 'copy';
+        onDragStart?.(product);
+      }}
+      onDragEnd={() => onDragEnd?.()}
+      className={`flex items-center gap-2.5 w-full px-3 py-2.5 border-none cursor-grab active:cursor-grabbing font-[inherit] transition-colors border-b border-b-gray-100 ${
         selected ? 'bg-primary-blue-50' : 'bg-transparent hover:bg-gray-50'
       }`}
     >
@@ -337,6 +347,9 @@ function ShelfRow({
   pickedGlide, pickedProduct, dragSource, dragOver,
   onGlideMouseDown, onGlideMouseEnter, onShelfMouseUp,
   customIncrement, onAddCustomArea,
+  libraryDragProduct, onLibraryDrop,
+  onGlideContextMenu,
+  onEditCustom,
   onRemoveShelf,
   pickedShelf, onPickShelf,
 }) {
@@ -420,6 +433,12 @@ function ShelfRow({
             dragOverClass = 'ring-2 ring-primary-blue-400 ring-inset bg-primary-blue-50/40';
           }
 
+          // Library drag-and-drop: a product is being dragged in from the sidebar.
+          // We allow drop on every glide cell — drop = "insert before this glide".
+          const libraryDropFits = libraryDragProduct
+            ? used + (libraryDragProduct.glideWidth || 0) <= SHELF_WIDTH_INCHES + 0.001
+            : false;
+
           // Insertion-line cue — show a blue vertical bar on the glide's left edge
           // when an insertion-armed tool is active and the new item would fit.
           const insertingAdd    = activeTool === 'add' && selectedProduct;
@@ -436,6 +455,18 @@ function ShelfRow({
             <div
               key={glideIdx}
               style={{ width: `${widthPct}%` }}
+              onDragOver={(e) => {
+                if (!libraryDragProduct) return;
+                e.preventDefault();
+                e.dataTransfer.dropEffect = libraryDropFits ? 'copy' : 'none';
+              }}
+              onDrop={(e) => {
+                if (!libraryDragProduct) return;
+                e.preventDefault();
+                e.stopPropagation();
+                // Insert BEFORE this glide.
+                onLibraryDrop?.(doorIdx, shelfIdx, glideIdx);
+              }}
               onMouseDown={(e) => {
                 if (activeTool === 'move') {
                   e.preventDefault(); // Block native image/text drag from hijacking
@@ -447,6 +478,11 @@ function ShelfRow({
               }}
               onMouseUp={() => {
                 if (activeTool === 'move') onShelfMouseUp(doorIdx, shelfIdx, glideIdx);
+              }}
+              onContextMenu={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                onGlideContextMenu?.(e.clientX, e.clientY, doorIdx, shelfIdx, glideIdx);
               }}
               onClick={(e) => {
                 e.stopPropagation();
@@ -473,7 +509,13 @@ function ShelfRow({
               }}
               className={`h-[52px] border-r border-gray-300/30 flex items-center justify-center transition-all select-none relative group/glide ${cursorClass} ${!isDragging ? hoverClass : ''} ${
                 isSelected ? 'ring-2 ring-primary-blue-500 ring-inset bg-primary-blue-50/30' : ''
-              } ${isPicked ? 'ring-2 ring-amber-400 ring-inset bg-amber-50/40' : ''} ${dragOverClass}`}
+              } ${isPicked ? 'ring-2 ring-amber-400 ring-inset bg-amber-50/40' : ''} ${dragOverClass} ${
+                libraryDragProduct
+                  ? libraryDropFits
+                    ? 'hover:ring-2 hover:ring-primary-blue-400 hover:ring-inset hover:bg-primary-blue-50/40'
+                    : 'hover:bg-red-50/40 cursor-not-allowed'
+                  : ''
+              }`}
               title={
                 isCustom
                   ? `Custom area (${widthOf(glide)}″) — store owner's free space`
@@ -492,7 +534,29 @@ function ShelfRow({
               )}
 
               {isCustom ? (
-                <div className="w-[92%] h-[84%] rounded border border-dashed border-gray-400 bg-gray-200/70" />
+                <div className="w-[92%] h-[84%] rounded border border-dashed border-gray-400 bg-gray-200/70 flex items-center justify-center px-1 relative">
+                  {/* Click to add/edit a description for this custom area.
+                      Renders as a + button when empty, or the note text + edit
+                      pencil affordance when filled. stopPropagation so the
+                      click doesn't fall through to the shelf-level handlers. */}
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onEditCustom?.(doorIdx, shelfIdx, glideIdx);
+                    }}
+                    title={glide.note ? `Custom area: ${glide.note} — click to edit` : 'Click to describe this custom area'}
+                    className="flex items-center justify-center gap-1 max-w-full h-full px-1.5 bg-transparent border-none cursor-pointer text-gray-600 hover:text-primary-blue-600 transition-colors"
+                  >
+                    {glide.note ? (
+                      <span className="text-[10px] font-medium leading-tight truncate">{glide.note}</span>
+                    ) : (
+                      <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+                        <path d="M7 2.5v9M2.5 7h9" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round"/>
+                      </svg>
+                    )}
+                  </button>
+                </div>
               ) : product?.packType === 'Slim can' && !glide.single ? (
                 <div className={`w-full h-full flex flex-col gap-[1px] overflow-hidden transition-opacity ${isDragSource ? 'opacity-40' : ''} ${isPicked ? 'opacity-50' : ''}`}>
                   <img
@@ -572,9 +636,32 @@ function ShelfRow({
             zoneTitle = 'Release to drop here';
           }
 
+          const libraryDropFitsZone = libraryDragProduct
+            ? used + (libraryDragProduct.glideWidth || 0) <= SHELF_WIDTH_INCHES + 0.001
+            : false;
+          if (libraryDragProduct) {
+            zoneClass = libraryDropFitsZone
+              ? 'cursor-copy hover:bg-primary-blue-50/40 ring-2 ring-transparent hover:ring-primary-blue-300 hover:ring-inset'
+              : 'bg-gray-100/40 cursor-not-allowed';
+            zoneTitle = libraryDropFitsZone
+              ? `Drop to add ${libraryDragProduct.name} (${libraryDragProduct.glideWidth}″)`
+              : `Not enough room — ${Math.round(remaining * 10) / 10}″ left, needs ${libraryDragProduct.glideWidth}″`;
+          }
+
           return (
             <div
               style={{ width: `${remainingPct}%` }}
+              onDragOver={(e) => {
+                if (!libraryDragProduct) return;
+                e.preventDefault();
+                e.dataTransfer.dropEffect = libraryDropFitsZone ? 'copy' : 'none';
+              }}
+              onDrop={(e) => {
+                if (!libraryDragProduct) return;
+                e.preventDefault();
+                e.stopPropagation();
+                onLibraryDrop?.(doorIdx, shelfIdx, null);
+              }}
               onMouseEnter={() => {
                 // Mirror the per-glide mouseenter so dragging into an *empty*
                 // shelf (where the trailing zone is the only target) registers
@@ -657,6 +744,8 @@ function DoorColumn({
   customIncrement, onAddCustomArea,
   onAddShelfToDoor, onRemoveShelf, maxShelves,
   pickedShelf, onPickShelf,
+  libraryDragProduct, onLibraryDrop,
+  onGlideContextMenu, onEditCustom,
 }) {
   const facingCount = door.shelves.reduce(
     (acc, s) => acc + (s.glides?.reduce((sum, g) => sum + facingsOf(g), 0) || 0),
@@ -715,6 +804,10 @@ function DoorColumn({
               onRemoveShelf={onRemoveShelf}
               pickedShelf={pickedShelf}
               onPickShelf={onPickShelf}
+              libraryDragProduct={libraryDragProduct}
+              onLibraryDrop={onLibraryDrop}
+              onGlideContextMenu={onGlideContextMenu}
+              onEditCustom={onEditCustom}
             />
           ))}
 
@@ -765,6 +858,57 @@ function DoorColumn({
 export default function PlanogramView({ doorSet, regionName, onExit, layout: controlledLayout, onLayoutChange, variant = 'tools' }) {
   const [activeTool, setActiveTool] = useState('select');
   const [selectedProduct, setSelectedProduct] = useState(null);
+  // Currently being dragged from the Product Library (HTML5 drag-and-drop).
+  // Null when no drag is in progress. We track the full product object so the
+  // drop targets can size-check + visualise without re-looking it up.
+  const [libraryDragProduct, setLibraryDragProduct] = useState(null);
+  // Right-click context menu anchored at the cursor over a placed glide.
+  // Carries enough target info so menu items can act directly on that glide
+  // (Remove / Duplicate-pick) or switch tools with that glide as the next
+  // target (Add / Custom inserts BEFORE it).
+  const [glideContextMenu, setGlideContextMenu] = useState(null);
+  // Imperative opener passed down to ShelfRow via DoorColumn.
+  function openGlideContextMenu(x, y, doorIdx, shelfIdx, glideIdx) {
+    setGlideContextMenu({ x, y, doorIdx, shelfIdx, glideIdx });
+  }
+
+  // Custom-area note editor — modal text input that describes what a Custom
+  // block is reserved for (e.g. "store impulse rack" / "promo display").
+  // The note is stored on the glide itself (`glide.note`) so it survives
+  // resize, move, paste, and serializes with the layout.
+  const [customNoteEditor, setCustomNoteEditor] = useState(null);
+  // First-run walkthrough — opens automatically the first time any user lands
+  // in PlanogramView, then is gated by a localStorage flag so it doesn't fire
+  // again. The flag is versioned so we can re-trigger after a substantial
+  // editor change by bumping the suffix.
+  const TOUR_FLAG = 'cooler-schematic-tour-v1';
+  const [showTour, setShowTour] = useState(() => {
+    if (typeof window === 'undefined') return false;
+    try { return !window.localStorage.getItem(TOUR_FLAG); } catch { return false; }
+  });
+  function dismissTour() {
+    setShowTour(false);
+    try { window.localStorage.setItem(TOUR_FLAG, '1'); } catch {}
+  }
+  function openCustomNoteEditor(doorIdx, shelfIdx, glideIdx) {
+    const glide = layout[doorIdx]?.shelves[shelfIdx]?.glides[glideIdx];
+    if (!glide || glide._type !== 'custom') return;
+    setCustomNoteEditor({ doorIdx, shelfIdx, glideIdx, draft: glide.note || '' });
+  }
+  function saveCustomNote() {
+    if (!customNoteEditor) return;
+    const { doorIdx, shelfIdx, glideIdx, draft } = customNoteEditor;
+    const trimmed = draft.trim();
+    updateLayout((prev) => {
+      const next = JSON.parse(JSON.stringify(prev));
+      const g = next[doorIdx]?.shelves[shelfIdx]?.glides[glideIdx];
+      if (!g || g._type !== 'custom') return prev;
+      if (trimmed) g.note = trimmed;
+      else delete g.note;
+      return next;
+    });
+    setCustomNoteEditor(null);
+  }
   const [zoom, setZoom] = useState(100);
   const [productSearch, setProductSearch] = useState('');
   const [focusedDoor, setFocusedDoor] = useState('all');
@@ -971,6 +1115,16 @@ export default function PlanogramView({ doorSet, regionName, onExit, layout: con
   }
 
   // `insertAt` is the index to splice the new glide BEFORE; null/undefined → append.
+  // Library drag-and-drop entry point. Routes through handleAddGlide so the
+  // existing fit-check + toast + recently-used tracking apply. Clears the drag
+  // state on drop so the visual cue disappears even if onDragEnd is missed.
+  function handleLibraryDrop(doorIdx, shelfIdx, insertAt) {
+    const product = libraryDragProduct;
+    setLibraryDragProduct(null);
+    if (!product) return;
+    handleAddGlide(doorIdx, shelfIdx, product, insertAt);
+  }
+
   function handleAddGlide(doorIdx, shelfIdx, product, insertAt = null) {
     const shelf = layout[doorIdx]?.shelves[shelfIdx];
     if (!shelf || !product) return;
@@ -1449,6 +1603,7 @@ export default function PlanogramView({ doorSet, regionName, onExit, layout: con
         setPickedGlide(null);
         setPickedShelf(null);
         setSelectedGlides([]);
+        setGlideContextMenu(null);
       }
     }
     document.addEventListener('keydown', handleKeyDown);
@@ -1546,7 +1701,7 @@ export default function PlanogramView({ doorSet, regionName, onExit, layout: con
             {doorSet?.status === 'active' ? 'Active' : doorSet?.status === 'draft' ? 'Draft' : 'Archive'}
           </Badge>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2" data-tour="header-cta">
           <Badge state="Default">
             {variant === 'location'
               ? `${totalOverrides} override${totalOverrides === 1 ? '' : 's'}`
@@ -1687,6 +1842,7 @@ export default function PlanogramView({ doorSet, regionName, onExit, layout: con
             {tools.map((tool) => (
               <Tooltip key={tool.id} text={tool.tip || tool.label} position="down">
                 <button
+                  data-tour-tool={tool.id}
                   onClick={() => switchTool(tool.id)}
                   className={`flex items-center gap-1.5 h-8 px-2.5 rounded-lg border cursor-pointer transition-colors text-xs font-medium ${
                     activeTool === tool.id
@@ -1704,7 +1860,7 @@ export default function PlanogramView({ doorSet, regionName, onExit, layout: con
 
           <div className="w-px h-5 bg-gray-200 mx-3" />
 
-          <div className="flex items-center gap-1">
+          <div className="flex items-center gap-1" data-tour="undo-redo">
             <Tooltip text="Undo" position="down">
               <button
                 onClick={handleUndo}
@@ -1750,6 +1906,30 @@ export default function PlanogramView({ doorSet, regionName, onExit, layout: con
               </button>
             </Tooltip>
           </div>
+
+          <div className="w-px h-5 bg-gray-200 mx-3" />
+
+          {/* Help — replays the first-run walkthrough. Phosphor "Question"
+              outline icon kept inline (matches the rest of the toolbar — no
+              icon library dependency added). Clears the localStorage gate
+              so the tour can be triggered again if the user reloads. */}
+          <Tooltip text="Restart the product walkthrough" position="down">
+            <button
+              onClick={() => {
+                try { window.localStorage.removeItem('cooler-schematic-tour-v1'); } catch {}
+                setShowTour(true);
+              }}
+              aria-label="Restart walkthrough"
+              className="flex items-center justify-center w-8 h-8 rounded-lg border border-gray-200 bg-white hover:bg-gray-50 cursor-pointer text-gray-600 hover:text-primary-blue-600 transition-colors"
+            >
+              {/* Phosphor — Question (regular) */}
+              <svg width="16" height="16" viewBox="0 0 256 256" fill="none">
+                <circle cx="128" cy="128" r="96" stroke="currentColor" strokeWidth="16"/>
+                <path d="M94 100c0-18.778 15.222-34 34-34s34 15.222 34 34c0 16-12 24-24 30-12 6-18 12-18 24" stroke="currentColor" strokeWidth="16" strokeLinecap="round" strokeLinejoin="round"/>
+                <circle cx="120" cy="184" r="10" fill="currentColor"/>
+              </svg>
+            </button>
+          </Tooltip>
 
           {variant === 'tools' && <div className="w-px h-5 bg-gray-200 mx-3" />}
 
@@ -1812,10 +1992,10 @@ export default function PlanogramView({ doorSet, regionName, onExit, layout: con
       {/* Main layout: sidebar + canvas */}
       <div className="flex flex-1 min-h-0">
         {/* Left sidebar */}
-        <div className="w-[340px] shrink-0 border-r border-gray-200 flex flex-col bg-white">
+        <div className="w-[340px] shrink-0 border-r border-gray-200 flex flex-col bg-white" data-tour="library">
 
           {/* View Doors — collapsible */}
-          <div className="px-3 py-4 border-b border-gray-200">
+          <div className="px-3 py-4 border-b border-gray-200" data-tour="view-doors">
             <button
               onClick={() => setViewDoorsOpen(!viewDoorsOpen)}
               className="flex items-center justify-between w-full bg-transparent border-none cursor-pointer p-0 font-[inherit]"
@@ -1961,7 +2141,7 @@ export default function PlanogramView({ doorSet, regionName, onExit, layout: con
               </label>
             </div>
 
-            <div className="flex-1 overflow-y-auto border-t border-gray-100">
+            <div className="flex-1 overflow-y-auto border-t border-gray-100" data-tour="library-list">
               {filteredProducts.map((product) => (
                 <ProductRow
                   key={product.id}
@@ -1975,6 +2155,8 @@ export default function PlanogramView({ doorSet, regionName, onExit, layout: con
                       switchTool('add');
                     }
                   }}
+                  onDragStart={(p) => setLibraryDragProduct(p)}
+                  onDragEnd={() => setLibraryDragProduct(null)}
                 />
               ))}
               {filteredProducts.length === 0 && (
@@ -2096,7 +2278,7 @@ export default function PlanogramView({ doorSet, regionName, onExit, layout: con
             </div>
           )}
 
-          <div className="flex-1 overflow-auto p-6">
+          <div className="flex-1 overflow-auto p-6" data-tour="canvas">
             {focusedDoor === 'all' ? (
               <div
                 className="grid grid-cols-3 gap-6 transition-transform origin-top-left"
@@ -2128,6 +2310,10 @@ export default function PlanogramView({ doorSet, regionName, onExit, layout: con
                       maxShelves={MAX_SHELVES_PER_DOOR}
                       pickedShelf={pickedShelf}
                       onPickShelf={handlePickShelf}
+                      libraryDragProduct={libraryDragProduct}
+                      onLibraryDrop={handleLibraryDrop}
+                      onGlideContextMenu={openGlideContextMenu}
+                      onEditCustom={openCustomNoteEditor}
                     />
                   </div>
                 ))}
@@ -2191,12 +2377,163 @@ export default function PlanogramView({ doorSet, regionName, onExit, layout: con
                       maxShelves={MAX_SHELVES_PER_DOOR}
                       pickedShelf={pickedShelf}
                       onPickShelf={handlePickShelf}
+                      libraryDragProduct={libraryDragProduct}
+                      onLibraryDrop={handleLibraryDrop}
+                      onGlideContextMenu={openGlideContextMenu}
+                      onEditCustom={openCustomNoteEditor}
                     />
                   </div>
                 </div>
               </div>
             )}
           </div>
+
+          {/* Custom-area note editor — modal text input. Centered overlay with
+              click-away + Escape close. Save commits the trimmed value to the
+              glide; an empty value deletes any existing note. */}
+          {customNoteEditor && (
+            <div
+              className="fixed inset-0 z-[70] flex items-center justify-center bg-black/40 px-4"
+              onClick={() => setCustomNoteEditor(null)}
+            >
+              <div
+                className="bg-white border border-gray-200 rounded-xl shadow-[0px_10px_15px_-3px_rgba(0,0,0,0.1),0px_4px_6px_-4px_rgba(0,0,0,0.1)] p-5 w-full max-w-md flex flex-col gap-4"
+                onClick={(e) => e.stopPropagation()}
+              >
+                <div className="flex flex-col gap-1">
+                  <p className="text-sm font-semibold text-black">Describe this custom area</p>
+                  <p className="text-xs text-gray-500">
+                    What is this {Math.round((layout[customNoteEditor.doorIdx]?.shelves[customNoteEditor.shelfIdx]?.glides[customNoteEditor.glideIdx]?.width || 0) * 10) / 10}″
+                    {' '}area reserved for? (e.g. impulse rack, promo display)
+                  </p>
+                </div>
+                <input
+                  type="text"
+                  autoFocus
+                  value={customNoteEditor.draft}
+                  onChange={(e) => setCustomNoteEditor((p) => ({ ...p, draft: e.target.value }))}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') { e.preventDefault(); saveCustomNote(); }
+                    if (e.key === 'Escape') { e.preventDefault(); setCustomNoteEditor(null); }
+                  }}
+                  placeholder="e.g. Store impulse rack"
+                  maxLength={80}
+                  className="w-full h-10 px-3 text-sm text-gray-900 bg-white border border-gray-200 rounded-lg outline-none focus:border-primary-blue-400 focus:ring-2 focus:ring-primary-blue-100 font-[inherit]"
+                />
+                <div className="flex items-center justify-end gap-3">
+                  <button
+                    type="button"
+                    onClick={() => setCustomNoteEditor(null)}
+                    className="flex items-center justify-center h-9 px-3 bg-white border border-gray-200 rounded-lg shadow-[0px_1px_2px_0px_rgba(0,0,0,0.05)] text-sm font-semibold text-black cursor-pointer hover:bg-gray-50 font-[inherit]"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    onClick={saveCustomNote}
+                    className="flex items-center justify-center h-9 px-3 rounded-lg text-sm font-semibold text-white cursor-pointer hover:opacity-90 font-[inherit] border-none"
+                    style={{ backgroundColor: '#266DF0' }}
+                  >
+                    Save
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Right-click context menu — compact toolbar opener anchored at cursor.
+              Each item maps to a toolbar tool and acts on the right-clicked glide:
+              Remove deletes immediately; Duplicate picks this glide as the copy
+              source; Add / Custom switch tools and insert BEFORE this glide on
+              the next click; Select / Move switch tools (and add to selection). */}
+          {glideContextMenu && (() => {
+            const { x, y, doorIdx, shelfIdx, glideIdx } = glideContextMenu;
+            const close = () => setGlideContextMenu(null);
+            const items = tools.map((t) => {
+              let onSelect;
+              let disabled = false;
+              if (t.id === 'remove') {
+                onSelect = () => { handleRemoveGlide(doorIdx, shelfIdx, glideIdx); close(); };
+              } else if (t.id === 'copy') {
+                onSelect = () => {
+                  switchTool('copy');
+                  // Pick this glide as the duplicate source (handleDuplicateGlide
+                  // toggles into "picked" mode when no source is set yet).
+                  setTimeout(() => handleDuplicateGlide(doorIdx, shelfIdx, glideIdx), 0);
+                  close();
+                };
+                const isCustom = layout[doorIdx]?.shelves[shelfIdx]?.glides[glideIdx]?._type === 'custom';
+                disabled = isCustom; // can't duplicate a Custom block
+              } else if (t.id === 'select') {
+                onSelect = () => {
+                  switchTool('select');
+                  setTimeout(() => handleGlideClick(doorIdx, shelfIdx, glideIdx), 0);
+                  close();
+                };
+              } else if (t.id === 'add') {
+                onSelect = () => {
+                  if (!selectedProduct) {
+                    showToast('Pick a product in the library first', 'error');
+                  } else {
+                    handleAddGlide(doorIdx, shelfIdx, selectedProduct, glideIdx);
+                  }
+                  switchTool('add');
+                  close();
+                };
+                disabled = !selectedProduct;
+              } else if (t.id === 'custom') {
+                onSelect = () => {
+                  handleAddCustomArea(doorIdx, shelfIdx, CUSTOM_INCREMENT, glideIdx);
+                  switchTool('custom');
+                  close();
+                };
+              } else if (t.id === 'move') {
+                onSelect = () => { switchTool('move'); close(); };
+              }
+              return { ...t, onSelect, disabled };
+            });
+
+            // Clamp the menu to the viewport so it never spills off-screen.
+            const MENU_W = 180, MENU_H = items.length * 32 + 8;
+            const left = Math.min(x, window.innerWidth  - MENU_W - 8);
+            const top  = Math.min(y, window.innerHeight - MENU_H - 8);
+
+            return (
+              <>
+                {/* Click-away + escape closer */}
+                <div
+                  className="fixed inset-0 z-[60]"
+                  onClick={close}
+                  onContextMenu={(e) => { e.preventDefault(); close(); }}
+                />
+                <div
+                  className="fixed z-[61] bg-white border border-gray-200 rounded-lg shadow-[0px_8px_24px_rgba(0,0,0,0.12)] py-1"
+                  style={{ left, top, width: MENU_W }}
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  {items.map((item) => (
+                    <button
+                      key={item.id}
+                      type="button"
+                      disabled={item.disabled}
+                      onClick={item.onSelect}
+                      title={item.tip}
+                      className={`flex items-center gap-2 w-full px-3 py-1.5 text-xs font-medium text-left border-none bg-transparent font-[inherit] ${
+                        item.disabled
+                          ? 'opacity-40 cursor-not-allowed text-gray-400'
+                          : 'text-gray-700 hover:bg-gray-50 cursor-pointer'
+                      } ${activeTool === item.id ? 'bg-primary-blue-50/60 text-primary-blue-600' : ''}`}
+                    >
+                      <span className="w-4 h-4 flex items-center justify-center shrink-0">
+                        <item.icon active={activeTool === item.id} />
+                      </span>
+                      <span className="truncate">{item.label}</span>
+                    </button>
+                  ))}
+                </div>
+              </>
+            );
+          })()}
 
           {/* Floating bulk actions bar */}
           {showBulkPanel && (
@@ -2252,6 +2589,8 @@ export default function PlanogramView({ doorSet, regionName, onExit, layout: con
           )}
         </div>
       </div>
+
+      {showTour && <PlanogramTour onClose={dismissTour} />}
 
       <ConfirmDialog
         open={!!confirmAction}
