@@ -749,7 +749,20 @@ function DoorColumn({
 }
 
 /* ─── Main Component ─── */
-export default function PlanogramView({ doorSet, regionName, onExit }) {
+/**
+ * PlanogramView
+ * @param {object}   props
+ * @param {object}   props.doorSet     — { title, doors, defaultShelf, status }
+ * @param {string}   props.regionName  — display label for the region/header
+ * @param {function} [props.onExit]    — called from Discard / Publish exits
+ * @param {Array}    [props.layout]          — controlled layout; if omitted, the editor manages its own
+ * @param {function} [props.onLayoutChange]  — required when `layout` is controlled
+ * @param {"tools"|"location"} [props.variant="tools"]
+ *   Controls header chrome:
+ *   - "tools"    → Discard / Save Draft / Publish + `X facings` counter, Export in toolbar (default)
+ *   - "location" → Save Changes + `X overrides` counter, Export moved to the header
+ */
+export default function PlanogramView({ doorSet, regionName, onExit, layout: controlledLayout, onLayoutChange, variant = 'tools' }) {
   const [activeTool, setActiveTool] = useState('select');
   const [selectedProduct, setSelectedProduct] = useState(null);
   const [zoom, setZoom] = useState(100);
@@ -767,9 +780,20 @@ export default function PlanogramView({ doorSet, regionName, onExit }) {
   const [selectedGlides, setSelectedGlides] = useState([]); // [{doorIdx, shelfIdx, glideIdx}]
   const [pickedGlide, setPickedGlide] = useState(null);     // {doorIdx, shelfIdx, glideIdx}
   const [pickedShelf, setPickedShelf] = useState(null);     // {doorIdx, shelfIdx} — Duplicate-tool whole-shelf pick
-  const [layout, setLayout] = useState(() =>
-    generateShelfLayout(doorSet?.doors || 6, doorSet?.defaultShelf || 7)
+  // Layout can be controlled by the parent (used by per-location persistence in
+  // App.jsx) or managed internally for one-shot draft sessions (Tools flow).
+  const [internalLayout, setInternalLayout] = useState(() =>
+    controlledLayout ?? generateShelfLayout(doorSet?.doors || 6, doorSet?.defaultShelf || 7)
   );
+  const isControlled = controlledLayout !== undefined;
+  const layout = isControlled ? controlledLayout : internalLayout;
+  const setLayout = useCallback((updater) => {
+    if (isControlled) {
+      onLayoutChange((prev) => (typeof updater === 'function' ? updater(prev) : updater));
+    } else {
+      setInternalLayout(updater);
+    }
+  }, [isControlled, onLayoutChange]);
 
   const [toast, setToast] = useState(null);
   const [confirmAction, setConfirmAction] = useState(null);
@@ -804,7 +828,7 @@ export default function PlanogramView({ doorSet, regionName, onExit }) {
       setFutureLen(0);
       return next;
     });
-  }, [pushHistory]);
+  }, [pushHistory, setLayout]);
 
   function handleUndo() {
     if (historyRef.current.length === 0) return;
@@ -1470,6 +1494,12 @@ export default function PlanogramView({ doorSet, regionName, onExit }) {
     ),
     0
   );
+  // "Overrides" — one per glide placement (product glide or custom slab). Each
+  // distinct decision counts as one regardless of slim-can stacking.
+  const totalOverrides = layout.reduce(
+    (acc, door) => acc + door.shelves.reduce((a, s) => a + (s.glides?.length || 0), 0),
+    0
+  );
 
   // Sum facings per vendor across the whole layout.
   const vendorMix = (() => {
@@ -1518,62 +1548,131 @@ export default function PlanogramView({ doorSet, regionName, onExit }) {
         </div>
         <div className="flex items-center gap-2">
           <Badge state="Default">
-            {totalFacings} facings{totalCustomInches > 0 ? ` · ${Math.round(totalCustomInches * 10) / 10}″ custom` : ''}
+            {variant === 'location'
+              ? `${totalOverrides} override${totalOverrides === 1 ? '' : 's'}`
+              : `${totalFacings} facings${totalCustomInches > 0 ? ` · ${Math.round(totalCustomInches * 10) / 10}″ custom` : ''}`}
           </Badge>
-          <Button
-            type="Outline"
-            size="sm"
-            onClick={() => {
-              if (totalFacings === 0) {
-                onExit?.();
-                return;
-              }
-              setConfirmAction({
-                title: 'Discard all changes?',
-                message: 'This will remove all products from this planogram and return you to the previous screen.',
-                confirmLabel: 'Yes, Discard',
-                run: () => {
-                  setLayout(generateShelfLayout(doorSet?.doors || 6, doorSet?.defaultShelf || 7));
-                  historyRef.current = [];
-                  futureRef.current = [];
-                  setHistoryLen(0);
-                  setFutureLen(0);
-                  showToast('Changes discarded');
-                  onExit?.();
-                },
-              });
-            }}
-          >
-            Discard
-          </Button>
-          <Button
-            type="Outline"
-            size="sm"
-            onClick={() => showToast('Draft saved')}
-          >
-            Save Draft
-          </Button>
-          <Button
-            type="Default"
-            size="sm"
-            onClick={() => {
-              if (totalFacings === 0) {
-                showToast('Add at least one product before publishing', 'error');
-                return;
-              }
-              setConfirmAction({
-                title: 'Publish this planogram?',
-                message: `${totalFacings} facings across ${layout.length} doors will be published to ${regionName}.`,
-                confirmLabel: 'Yes, Publish',
-                run: () => {
-                  showToast('Planogram published');
-                  onExit?.();
-                },
-              });
-            }}
-          >
-            Publish
-          </Button>
+
+          {variant === 'tools' && (
+            <>
+              <Button
+                type="Outline"
+                size="sm"
+                onClick={() => {
+                  if (totalFacings === 0) {
+                    onExit?.();
+                    return;
+                  }
+                  setConfirmAction({
+                    title: 'Discard all changes?',
+                    message: 'This will remove all products from this planogram and return you to the previous screen.',
+                    confirmLabel: 'Yes, Discard',
+                    run: () => {
+                      setLayout(generateShelfLayout(doorSet?.doors || 6, doorSet?.defaultShelf || 7));
+                      historyRef.current = [];
+                      futureRef.current = [];
+                      setHistoryLen(0);
+                      setFutureLen(0);
+                      showToast('Changes discarded');
+                      onExit?.();
+                    },
+                  });
+                }}
+              >
+                Discard
+              </Button>
+              <Button
+                type="Outline"
+                size="sm"
+                onClick={() => showToast('Draft saved')}
+              >
+                Save Draft
+              </Button>
+              <Button
+                type="Default"
+                size="sm"
+                onClick={() => {
+                  if (totalFacings === 0) {
+                    showToast('Add at least one product before publishing', 'error');
+                    return;
+                  }
+                  setConfirmAction({
+                    title: 'Publish this planogram?',
+                    message: `${totalFacings} facings across ${layout.length} doors will be published to ${regionName}.`,
+                    confirmLabel: 'Yes, Publish',
+                    run: () => {
+                      showToast('Planogram published');
+                      onExit?.();
+                    },
+                  });
+                }}
+              >
+                Publish
+              </Button>
+            </>
+          )}
+
+          {variant === 'location' && (
+            <>
+              {/* Export dropdown moves here in the location variant */}
+              <div className="relative" ref={exportMenuRef}>
+                <button
+                  onClick={() => !exporting && setExportMenuOpen((o) => !o)}
+                  disabled={exporting}
+                  className={`flex items-center gap-1.5 h-8 px-2.5 rounded-lg border border-gray-200 bg-white text-xs font-medium text-gray-700 transition-colors ${
+                    exporting ? 'opacity-60 cursor-wait' : 'hover:bg-gray-50 cursor-pointer'
+                  }`}
+                >
+                  <ExportIcon />
+                  {exporting ? 'Exporting…' : 'Export'}
+                  <svg width="10" height="6" viewBox="0 0 10 6" fill="none" className={`shrink-0 transition-transform duration-150 ${exportMenuOpen ? 'rotate-180' : ''}`}>
+                    <path d="M1 1L5 5L9 1" stroke="#667085" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+                  </svg>
+                </button>
+                {exportMenuOpen && (
+                  <div className="absolute right-0 top-9 z-30 bg-white border border-gray-200 rounded-lg shadow-[0px_4px_12px_rgba(0,0,0,0.1)] py-1 min-w-[200px] max-h-[280px] overflow-y-auto">
+                    <button
+                      onClick={exportAllDoors}
+                      disabled={focusedDoor !== 'all'}
+                      title={focusedDoor !== 'all' ? 'Switch to All Doors view to export the full set' : undefined}
+                      className={`flex items-center justify-between w-full px-3 py-2 text-xs font-semibold border-none font-[inherit] transition-colors ${
+                        focusedDoor !== 'all' ? 'text-gray-300 cursor-not-allowed bg-transparent' : 'text-gray-900 hover:bg-gray-50 cursor-pointer bg-transparent'
+                      }`}
+                    >
+                      <span>All {layout.length} doors</span>
+                      <span className="text-[10px] text-gray-400 font-normal">multi-page PDF</span>
+                    </button>
+                    <div className="h-px bg-gray-100 my-1" />
+                    {layout.map((door, idx) => {
+                      const disabled = focusedDoor !== 'all' && focusedDoor !== idx;
+                      return (
+                        <button
+                          key={door.id}
+                          onClick={() => exportDoorIndex(idx)}
+                          disabled={disabled}
+                          className={`flex items-center justify-between w-full px-3 py-1.5 text-xs font-medium border-none font-[inherit] transition-colors ${
+                            disabled ? 'text-gray-300 cursor-not-allowed bg-transparent' : 'text-gray-900 hover:bg-gray-50 cursor-pointer bg-transparent'
+                          }`}
+                        >
+                          <span>{door.label}</span>
+                          <span className="text-[10px] text-gray-400 font-normal">PDF</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+              <Button
+                type="Default"
+                size="sm"
+                onClick={() => {
+                  showToast(`Saved ${totalOverrides} override${totalOverrides === 1 ? '' : 's'}`);
+                }}
+              >
+                Save Changes
+              </Button>
+            </>
+          )}
         </div>
       </div>
 
@@ -1652,9 +1751,10 @@ export default function PlanogramView({ doorSet, regionName, onExit }) {
             </Tooltip>
           </div>
 
-          <div className="w-px h-5 bg-gray-200 mx-3" />
+          {variant === 'tools' && <div className="w-px h-5 bg-gray-200 mx-3" />}
 
-          {/* Export dropdown */}
+          {/* Export dropdown — hidden in the location variant (moved to the top header) */}
+          {variant === 'tools' && (
           <div className="relative" ref={exportMenuRef}>
             <Tooltip text={exporting ? 'Generating PDF…' : 'Download as PDF'} position="down">
               <button
@@ -1705,6 +1805,7 @@ export default function PlanogramView({ doorSet, regionName, onExit }) {
               </div>
             )}
           </div>
+          )}
         </div>
       </div>
 

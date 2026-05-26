@@ -5,6 +5,7 @@ import Input from '../Input';
 import SidePanel from '../SidePanel';
 import ConfirmDialog from '../ConfirmDialog';
 import { showToast } from '../../lib/toast';
+import { seedLayoutFromBase } from '../../data/planogram';
 
 function pad(n) {
   return String(n).padStart(2, '0');
@@ -139,14 +140,31 @@ function DoorSetCard({ ds, onEditPlanogram, menuItems }) {
   );
 }
 
-export default function RegionsView({ year, onEditPlanogram, regions, setRegions }) {
+export default function RegionsView({ year, onEditPlanogram, regions, setRegions, doorSetLayouts = {} }) {
   const [activeRegion, setActiveRegion] = useState(regions[0]?.name);
   const [panelMode, setPanelMode] = useState(null); // null | 'create' | 'edit'
   const [editingDs, setEditingDs] = useState(null);
-  const [form, setForm] = useState({ name: '', doors: '6', shelves: '7', notes: '' });
+  const [form, setForm] = useState({ name: '', doors: '6', shelves: '7', notes: '', baseDoorSetId: 'empty' });
   const [errors, setErrors] = useState({});
   const [deleteTarget, setDeleteTarget] = useState(null);
   const [publishAllConfirm, setPublishAllConfirm] = useState(null);
+
+  // Build the "Start from" picker options once per regions update — Empty +
+  // every existing door set across every region for this year.
+  const baseOptions = [
+    { value: 'empty', label: 'Empty (start from scratch)' },
+    ...regions.flatMap((r) =>
+      r.doorSets.map((ds) => ({
+        value: ds._id,
+        label: `${r.name} · ${ds.title || `${ds.doors} Doors`}`,
+        regionName: r.name,
+        doors: ds.doors,
+        defaultShelf: ds.defaultShelf,
+      }))
+    ),
+  ];
+
+  const selectedBase = baseOptions.find((o) => o.value === form.baseDoorSetId);
 
   function updateDoorSet(regionName, dsId, updater) {
     setRegions((prev) => prev.map((r) =>
@@ -164,7 +182,7 @@ export default function RegionsView({ year, onEditPlanogram, regions, setRegions
   }
 
   function resetForm(defaultDoors = '6') {
-    setForm({ name: '', doors: defaultDoors, shelves: '7', notes: '' });
+    setForm({ name: '', doors: defaultDoors, shelves: '7', notes: '', baseDoorSetId: 'empty' });
     setErrors({});
   }
 
@@ -230,8 +248,18 @@ export default function RegionsView({ year, onEditPlanogram, regions, setRegions
       setRegions((prev) => prev.map((r) =>
         r.name !== activeRegion ? r : { ...r, doorSets: [...r.doorSets, doorSet] }
       ));
+      // If a base was chosen, seed the new door set's layout from it
+      // (adapted to the new dimensions). Otherwise the planogram editor
+      // starts with the default empty layout.
+      let seededLayout;
+      if (form.baseDoorSetId !== 'empty') {
+        const baseLayout = doorSetLayouts[form.baseDoorSetId];
+        if (baseLayout) {
+          seededLayout = seedLayoutFromBase(baseLayout, valid.doorsN, valid.shelvesN);
+        }
+      }
       closePanel();
-      onEditPlanogram?.(doorSet, activeRegion);
+      onEditPlanogram?.(doorSet, activeRegion, seededLayout);
     } else if (panelMode === 'edit') {
       const name = form.name.trim();
       updateDoorSet(activeRegion, editingDs._id, (ds) => ({
@@ -408,6 +436,32 @@ export default function RegionsView({ year, onEditPlanogram, regions, setRegions
         }
       >
         <div className="flex flex-col gap-6">
+          {panelMode === 'create' && (
+            <div className="flex flex-col gap-2">
+              <label className="text-sm font-medium leading-5 text-gray-700">Start from</label>
+              <div className="relative">
+                <select
+                  value={form.baseDoorSetId}
+                  onChange={(e) => setForm((f) => ({ ...f, baseDoorSetId: e.target.value }))}
+                  className="w-full h-10 px-3 pr-9 bg-white border border-gray-200 rounded-lg shadow-[0px_1px_2px_0px_rgba(0,0,0,0.05)] text-sm font-medium text-gray-900 outline-none focus:border-primary-blue-500 focus:ring-2 focus:ring-primary-blue-150 cursor-pointer appearance-none font-[inherit]"
+                >
+                  {baseOptions.map((opt) => (
+                    <option key={opt.value} value={opt.value}>{opt.label}</option>
+                  ))}
+                </select>
+                <svg width="10" height="6" viewBox="0 0 10 6" fill="none" className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none">
+                  <path d="M1 1L5 5L9 1" stroke="#667085" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+                </svg>
+              </div>
+              <p className="text-[11px] text-gray-500 leading-tight">
+                {form.baseDoorSetId === 'empty'
+                  ? 'Builds an empty planogram with the dimensions you choose below.'
+                  : selectedBase
+                  ? `Copies the layout from ${selectedBase.label} (${selectedBase.doors}×${selectedBase.defaultShelf}). Glides outside the new dimensions are dropped, extra doors/shelves stay empty.`
+                  : ''}
+              </p>
+            </div>
+          )}
           <Input
             label="Door set name"
             required

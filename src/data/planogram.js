@@ -264,3 +264,25 @@ export function generateShelfLayout(doorCount, shelfCount) {
     })),
   }));
 }
+
+/**
+ * Seed a fresh layout of the target dimensions, copying glides from a base
+ * layout where the shapes overlap. Doors / shelves that exist in the base but
+ * not the target are dropped; the reverse get empty shelves. Used by
+ * RegionsView's "Start from" picker when creating a new door set.
+ */
+export function seedLayoutFromBase(baseLayout, doorCount, shelfCount) {
+  const target = generateShelfLayout(doorCount, shelfCount);
+  if (!Array.isArray(baseLayout) || baseLayout.length === 0) return target;
+  const doorsToCopy = Math.min(doorCount, baseLayout.length);
+  for (let d = 0; d < doorsToCopy; d++) {
+    const baseDoor = baseLayout[d];
+    if (!baseDoor?.shelves) continue;
+    const shelvesToCopy = Math.min(target[d].shelves.length, baseDoor.shelves.length);
+    for (let s = 0; s < shelvesToCopy; s++) {
+      const baseGlides = baseDoor.shelves[s]?.glides || [];
+      target[d].shelves[s].glides = JSON.parse(JSON.stringify(baseGlides));
+    }
+  }
+  return target;
+}

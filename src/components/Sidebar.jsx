@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { mainNavItems, toolsSubItems } from '../data/navigation';
 
-function NavItem({ icon, label, active = false, sub = false, collapsed = false }) {
+function NavItem({ icon, label, active = false, sub = false, collapsed = false, onClick }) {
   const base = sub
     ? `flex items-center gap-2.5 h-9 rounded-lg cursor-pointer no-underline ${collapsed ? 'justify-center px-0' : 'pl-5 pr-2.5'} text-xs font-medium`
     : `flex items-center gap-2.5 h-9 rounded-lg cursor-pointer no-underline ${collapsed ? 'justify-center px-0' : 'px-2.5'} text-sm font-medium`;
@@ -13,7 +13,7 @@ function NavItem({ icon, label, active = false, sub = false, collapsed = false }
   const iconSize = sub ? 'w-4 h-4 shrink-0' : 'w-[18px] h-[18px] shrink-0';
 
   return (
-    <a className={`${base} ${state}`} title={collapsed ? label : undefined}>
+    <a className={`${base} ${state}`} title={collapsed ? label : undefined} onClick={onClick}>
       <img src={icon} alt="" className={iconSize} />
       {!collapsed && label}
     </a>
@@ -32,9 +32,21 @@ function CollapseIcon({ collapsed }) {
   );
 }
 
-export default function Sidebar() {
+export default function Sidebar({ activeRoute, onNavigate }) {
   const [toolsOpen, setToolsOpen] = useState(true);
   const [collapsed, setCollapsed] = useState(false);
+
+  // Map main-nav labels to the routes the App.jsx state machine understands.
+  // Only Locations and the Tools → Cooler Schematic items are wired today;
+  // every other label is a no-op (toast-like console hint).
+  const routeFor = {
+    Locations: 'locations',
+  };
+
+  function handleMainNavClick(label) {
+    const route = routeFor[label];
+    if (route) onNavigate?.(route);
+  }
 
   return (
     <aside
@@ -61,7 +73,14 @@ export default function Sidebar() {
         {/* Main group */}
         <div className="flex flex-col gap-1">
           {mainNavItems.map((item) => (
-            <NavItem key={item.label} icon={item.icon} label={item.label} collapsed={collapsed} />
+            <NavItem
+              key={item.label}
+              icon={item.icon}
+              label={item.label}
+              collapsed={collapsed}
+              active={routeFor[item.label] && activeRoute === routeFor[item.label]}
+              onClick={() => handleMainNavClick(item.label)}
+            />
           ))}
 
           {/* Tools section */}
@@ -90,9 +109,13 @@ export default function Sidebar() {
                     key={item.label}
                     icon={item.icon}
                     label={item.label}
-                    active={item.active}
+                    // Highlight Cooler Schematic when we're inside the planogram flow.
+                    active={item.label === 'Cooler Schematic' ? (activeRoute === 'years' || activeRoute == null) : item.active}
                     sub
                     collapsed={collapsed}
+                    onClick={() => {
+                      if (item.label === 'Cooler Schematic') onNavigate?.('years');
+                    }}
                   />
                 ))}
               </div>

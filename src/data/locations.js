@@ -1,0 +1,85 @@
+// Sample location records. Each entry corresponds to one convenience-store
+// account. The header in the Location Detail page binds to these fields.
+export const locations = [
+  {
+    id: '10191',
+    name: 'Kims Mobile',
+    address: '2972 Westheimer Rd, Santa Ana, Illinois 85486',
+    status: 'Active',
+    pso: 'Reserved',
+    salesAssociate: 'John Doe',
+    region: 'Southern California',
+  },
+  {
+    id: '10204',
+    name: 'Beachside Mart',
+    address: '4140 Parker Rd, Allentown, New Mexico 31134',
+    status: 'Active',
+    pso: 'Tier 1',
+    salesAssociate: 'Maria Lopez',
+    region: 'Central California',
+  },
+  {
+    id: '10220',
+    name: 'Sunset Plaza Foods',
+    address: '8502 Preston Rd, Inglewood, Maine 98380',
+    status: 'Active',
+    pso: 'Tier 2',
+    salesAssociate: 'James Park',
+    region: 'Las Vegas',
+  },
+  {
+    id: '10231',
+    name: 'Downtown Quick Stop',
+    address: '2118 Thornridge Cir, Syracuse, Connecticut 35624',
+    status: 'Inactive',
+    pso: 'Reserved',
+    salesAssociate: 'Priya Patel',
+    region: 'Arizona',
+  },
+  {
+    id: '10247',
+    name: 'Highway 5 Express',
+    address: '6391 Elgin St, Celina, Delaware 10299',
+    status: 'Active',
+    pso: 'Tier 3',
+    salesAssociate: 'Daniel Chen',
+    region: 'New Mexico',
+  },
+  {
+    id: '10258',
+    name: 'Northgate Convenience',
+    address: '3517 W Gray St, Utica, Pennsylvania 57867',
+    status: 'Pending',
+    pso: 'Unassigned',
+    salesAssociate: '—',
+    region: 'Northern California',
+  },
+  {
+    id: '10271',
+    name: 'Riverside Foods',
+    address: '775 Rolling Green Rd, Richardson, California 62639',
+    status: 'Active',
+    pso: 'Tier 1',
+    salesAssociate: 'Emma Wilson',
+    region: 'Colorado',
+  },
+];
+
+// The detail page's tab navigation lives here so the header component can
+// render them consistently.
+export const LOCATION_DETAIL_TABS = [
+  'Details',
+  'Team',
+  'Physical Attributes',
+  'EDI',
+  'Order Details',
+  'Marketing Agreement',
+  'Cooler Schematic',
+  'W9 Tax',
+  'Resale Cert.',
+  'Audit Results',
+  'Vendors',
+  'Payments',
+  'Tobacco',
+];
