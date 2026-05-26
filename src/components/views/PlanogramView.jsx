@@ -350,6 +350,7 @@ function ShelfRow({
   libraryDragProduct, onLibraryDrop,
   onGlideContextMenu,
   onEditCustom,
+  readOnly,
   onRemoveShelf,
   pickedShelf, onPickShelf,
 }) {
@@ -384,17 +385,19 @@ function ShelfRow({
       showDupHoverRing ? 'hover:bg-green-50/30 hover:ring-2 hover:ring-green-200 hover:ring-inset' : ''
     }`}>
       <div className="w-[18px] shrink-0 flex items-center justify-center text-[9px] text-gray-400/70 font-medium select-none relative">
-        <span className="group-hover/shelf:opacity-0 transition-opacity">{shelfIdx + 1}</span>
-        <button
-          type="button"
-          onClick={(e) => { e.stopPropagation(); onRemoveShelf?.(doorIdx, shelfIdx); }}
-          title={`Remove Shelf ${shelfIdx + 1}`}
-          className="absolute inset-0 flex items-center justify-center opacity-0 group-hover/shelf:opacity-100 transition-opacity cursor-pointer bg-transparent border-none p-0 hover:text-red-600 text-gray-500"
-        >
-          <svg width="10" height="10" viewBox="0 0 10 10" fill="none">
-            <path d="M2 2L8 8M8 2L2 8" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
-          </svg>
-        </button>
+        <span className={readOnly ? '' : 'group-hover/shelf:opacity-0 transition-opacity'}>{shelfIdx + 1}</span>
+        {!readOnly && (
+          <button
+            type="button"
+            onClick={(e) => { e.stopPropagation(); onRemoveShelf?.(doorIdx, shelfIdx); }}
+            title={`Remove Shelf ${shelfIdx + 1}`}
+            className="absolute inset-0 flex items-center justify-center opacity-0 group-hover/shelf:opacity-100 transition-opacity cursor-pointer bg-transparent border-none p-0 hover:text-red-600 text-gray-500"
+          >
+            <svg width="10" height="10" viewBox="0 0 10 10" fill="none">
+              <path d="M2 2L8 8M8 2L2 8" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
+            </svg>
+          </button>
+        )}
       </div>
       <div className={`flex-1 flex border-b border-gray-300/40 bg-transparent relative ${isShelfNearFull ? 'justify-between' : ''}`}>
         {glides.map((glide, glideIdx) => {
@@ -539,23 +542,35 @@ function ShelfRow({
                       Renders as a + button when empty, or the note text + edit
                       pencil affordance when filled. stopPropagation so the
                       click doesn't fall through to the shelf-level handlers. */}
-                  <button
-                    type="button"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      onEditCustom?.(doorIdx, shelfIdx, glideIdx);
-                    }}
-                    title={glide.note ? `Custom area: ${glide.note} — click to edit` : 'Click to describe this custom area'}
-                    className="flex items-center justify-center gap-1 max-w-full h-full px-1.5 bg-transparent border-none cursor-pointer text-gray-600 hover:text-primary-blue-600 transition-colors"
-                  >
-                    {glide.note ? (
-                      <span className="text-[10px] font-medium leading-tight truncate">{glide.note}</span>
-                    ) : (
-                      <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
-                        <path d="M7 2.5v9M2.5 7h9" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round"/>
-                      </svg>
-                    )}
-                  </button>
+                  {readOnly ? (
+                    // Viewers see the label statically, or nothing if no note was set.
+                    glide.note ? (
+                      <span
+                        className="text-[10px] font-medium leading-tight truncate text-gray-600 px-1.5"
+                        title={`Custom area: ${glide.note}`}
+                      >
+                        {glide.note}
+                      </span>
+                    ) : null
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onEditCustom?.(doorIdx, shelfIdx, glideIdx);
+                      }}
+                      title={glide.note ? `Custom area: ${glide.note} — click to edit` : 'Click to describe this custom area'}
+                      className="flex items-center justify-center gap-1 max-w-full h-full px-1.5 bg-transparent border-none cursor-pointer text-gray-600 hover:text-primary-blue-600 transition-colors"
+                    >
+                      {glide.note ? (
+                        <span className="text-[10px] font-medium leading-tight truncate">{glide.note}</span>
+                      ) : (
+                        <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+                          <path d="M7 2.5v9M2.5 7h9" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round"/>
+                        </svg>
+                      )}
+                    </button>
+                  )}
                 </div>
               ) : product?.packType === 'Slim can' && !glide.single ? (
                 <div className={`w-full h-full flex flex-col gap-[1px] overflow-hidden transition-opacity ${isDragSource ? 'opacity-40' : ''} ${isPicked ? 'opacity-50' : ''}`}>
@@ -746,6 +761,7 @@ function DoorColumn({
   pickedShelf, onPickShelf,
   libraryDragProduct, onLibraryDrop,
   onGlideContextMenu, onEditCustom,
+  readOnly,
 }) {
   const facingCount = door.shelves.reduce(
     (acc, s) => acc + (s.glides?.reduce((sum, g) => sum + facingsOf(g), 0) || 0),
@@ -808,10 +824,13 @@ function DoorColumn({
               onLibraryDrop={onLibraryDrop}
               onGlideContextMenu={onGlideContextMenu}
               onEditCustom={onEditCustom}
+              readOnly={readOnly}
             />
           ))}
 
-          {/* + Add shelf button — inside the glass panel, above the bottom rail */}
+          {/* + Add shelf button — inside the glass panel, above the bottom rail.
+              Hidden in read-only Viewer mode since adding shelves mutates layout. */}
+          {!readOnly && (
           <button
             type="button"
             onClick={() => onAddShelfToDoor?.(doorIdx)}
@@ -828,6 +847,7 @@ function DoorColumn({
             </svg>
             Add shelf
           </button>
+          )}
         </div>
 
         {/* Bottom rail + stats */}
@@ -855,8 +875,15 @@ function DoorColumn({
  *   - "tools"    → Discard / Save Draft / Publish + `X facings` counter, Export in toolbar (default)
  *   - "location" → Save Changes + `X overrides` counter, Export moved to the header
  */
-export default function PlanogramView({ doorSet, regionName, onExit, layout: controlledLayout, onLayoutChange, variant = 'tools' }) {
-  const [activeTool, setActiveTool] = useState('select');
+export default function PlanogramView({ doorSet, regionName, onExit, layout: controlledLayout, onLayoutChange, variant = 'tools', readOnly = false }) {
+  const [activeTool, setActiveTool] = useState(readOnly ? 'view' : 'select');
+  // In read-only Viewer mode, force the tool to a sentinel value that no
+  // ShelfRow branch matches — that strips all cursor/hover affordances without
+  // touching the handler-by-handler readOnly gates.
+  useEffect(() => {
+    if (readOnly && activeTool !== 'view') setActiveTool('view');
+    if (!readOnly && activeTool === 'view') setActiveTool('select');
+  }, [readOnly, activeTool]);
   const [selectedProduct, setSelectedProduct] = useState(null);
   // Currently being dragged from the Product Library (HTML5 drag-and-drop).
   // Null when no drag is in progress. We track the full product object so the
@@ -869,6 +896,7 @@ export default function PlanogramView({ doorSet, regionName, onExit, layout: con
   const [glideContextMenu, setGlideContextMenu] = useState(null);
   // Imperative opener passed down to ShelfRow via DoorColumn.
   function openGlideContextMenu(x, y, doorIdx, shelfIdx, glideIdx) {
+    if (readOnly) return;
     setGlideContextMenu({ x, y, doorIdx, shelfIdx, glideIdx });
   }
 
@@ -891,6 +919,7 @@ export default function PlanogramView({ doorSet, regionName, onExit, layout: con
     try { window.localStorage.setItem(TOUR_FLAG, '1'); } catch {}
   }
   function openCustomNoteEditor(doorIdx, shelfIdx, glideIdx) {
+    if (readOnly) return;
     const glide = layout[doorIdx]?.shelves[shelfIdx]?.glides[glideIdx];
     if (!glide || glide._type !== 'custom') return;
     setCustomNoteEditor({ doorIdx, shelfIdx, glideIdx, draft: glide.note || '' });
@@ -1034,6 +1063,7 @@ export default function PlanogramView({ doorSet, regionName, onExit, layout: con
   }
 
   function handleGlideMouseDown(doorIdx, shelfIdx, glideIdx) {
+    if (readOnly) return;
     if (activeTool !== 'move') return;
     const glide = layout[doorIdx]?.shelves[shelfIdx]?.glides[glideIdx];
     if (!glide || glide._type === 'custom') return;
@@ -1101,6 +1131,7 @@ export default function PlanogramView({ doorSet, regionName, onExit, layout: con
   }
 
   function handleGlideClick(doorIdx, shelfIdx, glideIdx) {
+    if (readOnly) return;
     setSelectedGlides((prev) => {
       const exists = prev.some(
         (s) => s.doorIdx === doorIdx && s.shelfIdx === shelfIdx && s.glideIdx === glideIdx
@@ -1119,6 +1150,7 @@ export default function PlanogramView({ doorSet, regionName, onExit, layout: con
   // existing fit-check + toast + recently-used tracking apply. Clears the drag
   // state on drop so the visual cue disappears even if onDragEnd is missed.
   function handleLibraryDrop(doorIdx, shelfIdx, insertAt) {
+    if (readOnly) return;
     const product = libraryDragProduct;
     setLibraryDragProduct(null);
     if (!product) return;
@@ -1126,6 +1158,7 @@ export default function PlanogramView({ doorSet, regionName, onExit, layout: con
   }
 
   function handleAddGlide(doorIdx, shelfIdx, product, insertAt = null) {
+    if (readOnly) return;
     const shelf = layout[doorIdx]?.shelves[shelfIdx];
     if (!shelf || !product) return;
     if (!canAddGlide(shelf, product)) {
@@ -1155,6 +1188,7 @@ export default function PlanogramView({ doorSet, regionName, onExit, layout: con
   //     more facings of the same product).
   //   - Pass `Infinity` for the right-click "fill remaining" shortcut.
   function handleAddCustomArea(doorIdx, shelfIdx, requestedWidth = CUSTOM_INCREMENT, insertAt = null) {
+    if (readOnly) return;
     const shelf = layout[doorIdx]?.shelves[shelfIdx];
     if (!shelf) return;
     const rem = remainingWidth(shelf);
@@ -1199,6 +1233,7 @@ export default function PlanogramView({ doorSet, regionName, onExit, layout: con
   }
 
   function handleRemoveGlide(doorIdx, shelfIdx, glideIdx) {
+    if (readOnly) return;
     updateLayout((prev) => {
       const next = JSON.parse(JSON.stringify(prev));
       next[doorIdx].shelves[shelfIdx].glides.splice(glideIdx, 1);
@@ -1207,6 +1242,7 @@ export default function PlanogramView({ doorSet, regionName, onExit, layout: con
   }
 
   function handleDuplicateGlide(doorIdx, shelfIdx, glideIdx) {
+    if (readOnly) return;
     // Shelf-mode pick takes priority: any click on a destination shelf
     // (glide or trailing zone) pastes the whole shelf.
     if (pickedShelf) {
@@ -1252,6 +1288,7 @@ export default function PlanogramView({ doorSet, regionName, onExit, layout: con
   // number → unpick. Click a different shelf's glide / trailing zone / number
   // → paste the picked shelf's glides into the destination.
   function handlePickShelf(doorIdx, shelfIdx) {
+    if (readOnly) return;
     if (activeTool !== 'copy') return;
     // If we already picked the same shelf, treat it as a deselect.
     if (pickedShelf && pickedShelf.doorIdx === doorIdx && pickedShelf.shelfIdx === shelfIdx) {
@@ -1519,6 +1556,7 @@ export default function PlanogramView({ doorSet, regionName, onExit, layout: con
   const MAX_SHELVES_PER_DOOR = 10;
 
   function handleAddShelfToDoor(doorIdx) {
+    if (readOnly) return;
     const door = layout[doorIdx];
     if (!door) return;
     if (door.shelves.length >= MAX_SHELVES_PER_DOOR) {
@@ -1535,6 +1573,7 @@ export default function PlanogramView({ doorSet, regionName, onExit, layout: con
   }
 
   function handleRemoveShelfRequest(doorIdx, shelfIdx) {
+    if (readOnly) return;
     const shelf = layout[doorIdx]?.shelves[shelfIdx];
     if (!shelf) return;
     if (layout[doorIdx].shelves.length <= 1) {
@@ -1707,8 +1746,21 @@ export default function PlanogramView({ doorSet, regionName, onExit, layout: con
               ? `${totalOverrides} override${totalOverrides === 1 ? '' : 's'}`
               : `${totalFacings} facings${totalCustomInches > 0 ? ` · ${Math.round(totalCustomInches * 10) / 10}″ custom` : ''}`}
           </Badge>
+          {readOnly && (
+            <span
+              className="inline-flex items-center gap-1.5 h-7 px-2.5 rounded-full text-xs font-semibold border"
+              style={{ backgroundColor: '#0C111D', color: 'white', borderColor: '#0C111D' }}
+              title="You are viewing this planogram in read-only mode"
+            >
+              <svg width="12" height="12" viewBox="0 0 256 256" fill="none">
+                <path d="M128 56C56 56 16 128 16 128s40 72 112 72 112-72 112-72-40-72-112-72z" stroke="currentColor" strokeWidth="20"/>
+                <circle cx="128" cy="128" r="32" stroke="currentColor" strokeWidth="20"/>
+              </svg>
+              View only
+            </span>
+          )}
 
-          {variant === 'tools' && (
+          {!readOnly && variant === 'tools' && (
             <>
               <Button
                 type="Outline"
@@ -1767,7 +1819,7 @@ export default function PlanogramView({ doorSet, regionName, onExit, layout: con
             </>
           )}
 
-          {variant === 'location' && (
+          {!readOnly && variant === 'location' && (
             <>
               {/* Export dropdown moves here in the location variant */}
               <div className="relative" ref={exportMenuRef}>
@@ -1831,7 +1883,8 @@ export default function PlanogramView({ doorSet, regionName, onExit, layout: con
         </div>
       </div>
 
-      {/* Toolbar above canvas */}
+      {/* Toolbar above canvas — hidden entirely in read-only Viewer mode. */}
+      {!readOnly && (
       <div className="flex items-center h-[56px] px-4 bg-gray-50 shrink-0">
         <div className="flex items-center gap-2 text-xs text-gray-500">
           <span>{layout.length} doors &times; {layout[0]?.shelves.length || 0} shelves</span>
@@ -1988,10 +2041,14 @@ export default function PlanogramView({ doorSet, regionName, onExit, layout: con
           )}
         </div>
       </div>
+      )}
 
-      {/* Main layout: sidebar + canvas */}
+      {/* Main layout: sidebar + canvas. The product library sidebar is hidden
+          in read-only Viewer mode — viewers can't add products, so there's no
+          surface for it to anchor. */}
       <div className="flex flex-1 min-h-0">
         {/* Left sidebar */}
+        {!readOnly && (
         <div className="w-[340px] shrink-0 border-r border-gray-200 flex flex-col bg-white" data-tour="library">
 
           {/* View Doors — collapsible */}
@@ -2248,6 +2305,7 @@ export default function PlanogramView({ doorSet, regionName, onExit, layout: con
             </div>
           ) : null}
         </div>
+        )}
 
         {/* Canvas area */}
         <div className="flex-1 flex flex-col min-w-0 bg-white relative">
@@ -2314,6 +2372,7 @@ export default function PlanogramView({ doorSet, regionName, onExit, layout: con
                       onLibraryDrop={handleLibraryDrop}
                       onGlideContextMenu={openGlideContextMenu}
                       onEditCustom={openCustomNoteEditor}
+                      readOnly={readOnly}
                     />
                   </div>
                 ))}
@@ -2381,6 +2440,7 @@ export default function PlanogramView({ doorSet, regionName, onExit, layout: con
                       onLibraryDrop={handleLibraryDrop}
                       onGlideContextMenu={openGlideContextMenu}
                       onEditCustom={openCustomNoteEditor}
+                      readOnly={readOnly}
                     />
                   </div>
                 </div>
@@ -2590,7 +2650,7 @@ export default function PlanogramView({ doorSet, regionName, onExit, layout: con
         </div>
       </div>
 
-      {showTour && <PlanogramTour onClose={dismissTour} />}
+      {showTour && !readOnly && <PlanogramTour onClose={dismissTour} />}
 
       <ConfirmDialog
         open={!!confirmAction}

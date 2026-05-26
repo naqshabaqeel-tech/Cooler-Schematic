@@ -78,11 +78,12 @@ function CaretDownIcon() {
   );
 }
 
-function ActionIconButton({ children, title }) {
+function ActionIconButton({ children, title, onClick }) {
   return (
     <button
       type="button"
       title={title}
+      onClick={onClick}
       className="flex items-center justify-center w-8 h-8 rounded-lg border border-gray-200 bg-white shadow-[0px_1px_2px_0px_rgba(0,0,0,0.05)] hover:bg-gray-50 cursor-pointer"
     >
       {children}
@@ -101,6 +102,21 @@ function ActionIconButton({ children, title }) {
  */
 export default function LocationDetailView({ location, onBack, layout, onLayoutChange }) {
   const [activeTab, setActiveTab] = useState('Details');
+  // User role for this location detail surface. "editor" — full PlanogramView
+  // with sidebar, toolbar, and Save Changes. "viewer" — read-only canvas with
+  // no chrome and no mutations. Stored in localStorage so the choice survives
+  // reloads; in a real app this would come from auth claims.
+  const [userRole, setUserRole] = useState(() => {
+    if (typeof window === 'undefined') return 'editor';
+    try { return window.localStorage.getItem('cooler-schematic-user-role') || 'editor'; }
+    catch { return 'editor'; }
+  });
+  function toggleUserRole() {
+    const next = userRole === 'editor' ? 'viewer' : 'editor';
+    setUserRole(next);
+    try { window.localStorage.setItem('cooler-schematic-user-role', next); } catch {}
+  }
+  const isViewer = userRole === 'viewer';
 
   // Seed an empty layout for this location the first time the Cooler Schematic
   // tab is opened (and only if the parent hasn't already provided one).
@@ -148,12 +164,36 @@ export default function LocationDetailView({ location, onBack, layout, onLayoutC
           <ActionIconButton title="Add comment">
             <ChatsIcon />
           </ActionIconButton>
-          <button
-            type="button"
-            className="flex items-center justify-center h-8 px-2.5 bg-primary-blue-500 hover:bg-primary-blue-600 text-white text-sm font-semibold rounded-lg cursor-pointer border-none font-[inherit]"
+          {/* Editor / Viewer toggle — Phosphor Eye when in editor mode (click to
+              switch to viewer), PencilSimple when in viewer mode (click to
+              switch back). In a production app this gate would come from auth
+              claims rather than a manual toggle. */}
+          <ActionIconButton
+            title={isViewer ? 'Switch to Editor mode' : 'Switch to Viewer mode (read-only)'}
+            onClick={toggleUserRole}
           >
-            Save Changes
-          </button>
+            {isViewer ? (
+              // Phosphor — PencilSimple
+              <svg width="16" height="16" viewBox="0 0 256 256" fill="none">
+                <path d="M40 216l4-44L172 44a8 8 0 0 1 11 0l29 29a8 8 0 0 1 0 11L84 212l-44 4z" stroke="#475467" strokeWidth="14" strokeLinejoin="round"/>
+                <path d="M152 64l40 40" stroke="#475467" strokeWidth="14" strokeLinecap="round"/>
+              </svg>
+            ) : (
+              // Phosphor — Eye
+              <svg width="16" height="16" viewBox="0 0 256 256" fill="none">
+                <path d="M128 56C56 56 16 128 16 128s40 72 112 72 112-72 112-72-40-72-112-72z" stroke="#475467" strokeWidth="14"/>
+                <circle cx="128" cy="128" r="32" stroke="#475467" strokeWidth="14"/>
+              </svg>
+            )}
+          </ActionIconButton>
+          {!isViewer && (
+            <button
+              type="button"
+              className="flex items-center justify-center h-8 px-2.5 bg-primary-blue-500 hover:bg-primary-blue-600 text-white text-sm font-semibold rounded-lg cursor-pointer border-none font-[inherit]"
+            >
+              Save Changes
+            </button>
+          )}
         </div>
       </div>
 
@@ -228,6 +268,7 @@ export default function LocationDetailView({ location, onBack, layout, onLayoutC
           layout={layout}
           onLayoutChange={onLayoutChange}
           variant="location"
+          readOnly={isViewer}
         />
       </div>
 
