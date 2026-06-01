@@ -164,28 +164,9 @@ export default function LocationDetailView({ location, onBack, layout, onLayoutC
           <ActionIconButton title="Add comment">
             <ChatsIcon />
           </ActionIconButton>
-          {/* Editor / Viewer toggle — Phosphor Eye when in editor mode (click to
-              switch to viewer), PencilSimple when in viewer mode (click to
-              switch back). In a production app this gate would come from auth
-              claims rather than a manual toggle. */}
-          <ActionIconButton
-            title={isViewer ? 'Switch to Editor mode' : 'Switch to Viewer mode (read-only)'}
-            onClick={toggleUserRole}
-          >
-            {isViewer ? (
-              // Phosphor — PencilSimple
-              <svg width="16" height="16" viewBox="0 0 256 256" fill="none">
-                <path d="M40 216l4-44L172 44a8 8 0 0 1 11 0l29 29a8 8 0 0 1 0 11L84 212l-44 4z" stroke="#475467" strokeWidth="14" strokeLinejoin="round"/>
-                <path d="M152 64l40 40" stroke="#475467" strokeWidth="14" strokeLinecap="round"/>
-              </svg>
-            ) : (
-              // Phosphor — Eye
-              <svg width="16" height="16" viewBox="0 0 256 256" fill="none">
-                <path d="M128 56C56 56 16 128 16 128s40 72 112 72 112-72 112-72-40-72-112-72z" stroke="#475467" strokeWidth="14"/>
-                <circle cx="128" cy="128" r="32" stroke="#475467" strokeWidth="14"/>
-              </svg>
-            )}
-          </ActionIconButton>
+          {/* Save Changes is hidden when viewing as a read-only user. The
+              Editor/Viewer toggle lives inside PlanogramView next to Export
+              so it stays grouped with planogram-level controls. */}
           {!isViewer && (
             <button
               type="button"
@@ -269,6 +250,7 @@ export default function LocationDetailView({ location, onBack, layout, onLayoutC
           onLayoutChange={onLayoutChange}
           variant="location"
           readOnly={isViewer}
+          onToggleReadOnly={toggleUserRole}
         />
       </div>
 

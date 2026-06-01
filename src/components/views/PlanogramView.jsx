@@ -875,7 +875,7 @@ function DoorColumn({
  *   - "tools"    → Discard / Save Draft / Publish + `X facings` counter, Export in toolbar (default)
  *   - "location" → Save Changes + `X overrides` counter, Export moved to the header
  */
-export default function PlanogramView({ doorSet, regionName, onExit, layout: controlledLayout, onLayoutChange, variant = 'tools', readOnly = false }) {
+export default function PlanogramView({ doorSet, regionName, onExit, layout: controlledLayout, onLayoutChange, variant = 'tools', readOnly = false, onToggleReadOnly }) {
   const [activeTool, setActiveTool] = useState(readOnly ? 'view' : 'select');
   // In read-only Viewer mode, force the tool to a sentinel value that no
   // ShelfRow branch matches — that strips all cursor/hover affordances without
@@ -1746,19 +1746,6 @@ export default function PlanogramView({ doorSet, regionName, onExit, layout: con
               ? `${totalOverrides} override${totalOverrides === 1 ? '' : 's'}`
               : `${totalFacings} facings${totalCustomInches > 0 ? ` · ${Math.round(totalCustomInches * 10) / 10}″ custom` : ''}`}
           </Badge>
-          {readOnly && (
-            <span
-              className="inline-flex items-center gap-1.5 h-7 px-2.5 rounded-full text-xs font-semibold border"
-              style={{ backgroundColor: '#0C111D', color: 'white', borderColor: '#0C111D' }}
-              title="You are viewing this planogram in read-only mode"
-            >
-              <svg width="12" height="12" viewBox="0 0 256 256" fill="none">
-                <path d="M128 56C56 56 16 128 16 128s40 72 112 72 112-72 112-72-40-72-112-72z" stroke="currentColor" strokeWidth="20"/>
-                <circle cx="128" cy="128" r="32" stroke="currentColor" strokeWidth="20"/>
-              </svg>
-              View only
-            </span>
-          )}
 
           {!readOnly && variant === 'tools' && (
             <>
@@ -1819,9 +1806,11 @@ export default function PlanogramView({ doorSet, regionName, onExit, layout: con
             </>
           )}
 
-          {!readOnly && variant === 'location' && (
+          {variant === 'location' && (
             <>
-              {/* Export dropdown moves here in the location variant */}
+              {/* Export dropdown moves here in the location variant. Export is
+                  available in viewer mode too — generating a PDF is a read-only
+                  operation, and viewers often need the report. */}
               <div className="relative" ref={exportMenuRef}>
                 <button
                   onClick={() => !exporting && setExportMenuOpen((o) => !o)}
@@ -1869,15 +1858,45 @@ export default function PlanogramView({ doorSet, regionName, onExit, layout: con
                   </div>
                 )}
               </div>
-              <Button
-                type="Default"
-                size="sm"
-                onClick={() => {
-                  showToast(`Saved ${totalOverrides} override${totalOverrides === 1 ? '' : 's'}`);
-                }}
-              >
-                Save Changes
-              </Button>
+              {/* Editor / Viewer toggle — Phosphor Eye in editor mode (click to
+                  switch to viewer), PencilSimple in viewer mode (click to
+                  return). Sits between Export and Save Changes so the role
+                  switch lives with the other planogram-level controls.
+                  Only rendered when the parent passes onToggleReadOnly. */}
+              {onToggleReadOnly && (
+                <button
+                  type="button"
+                  onClick={onToggleReadOnly}
+                  title={readOnly ? 'Switch to Editor mode' : 'Switch to Viewer mode (read-only)'}
+                  aria-label={readOnly ? 'Switch to Editor mode' : 'Switch to Viewer mode'}
+                  className="flex items-center justify-center w-8 h-8 rounded-lg border border-gray-200 bg-white hover:bg-gray-50 cursor-pointer text-gray-600 hover:text-primary-blue-600 transition-colors"
+                >
+                  {readOnly ? (
+                    /* Phosphor — PencilSimple */
+                    <svg width="16" height="16" viewBox="0 0 256 256" fill="none">
+                      <path d="M40 216l4-44L172 44a8 8 0 0 1 11 0l29 29a8 8 0 0 1 0 11L84 212l-44 4z" stroke="currentColor" strokeWidth="14" strokeLinejoin="round"/>
+                      <path d="M152 64l40 40" stroke="currentColor" strokeWidth="14" strokeLinecap="round"/>
+                    </svg>
+                  ) : (
+                    /* Phosphor — Eye */
+                    <svg width="16" height="16" viewBox="0 0 256 256" fill="none">
+                      <path d="M128 56C56 56 16 128 16 128s40 72 112 72 112-72 112-72-40-72-112-72z" stroke="currentColor" strokeWidth="14"/>
+                      <circle cx="128" cy="128" r="32" stroke="currentColor" strokeWidth="14"/>
+                    </svg>
+                  )}
+                </button>
+              )}
+              {!readOnly && (
+                <Button
+                  type="Default"
+                  size="sm"
+                  onClick={() => {
+                    showToast(`Saved ${totalOverrides} override${totalOverrides === 1 ? '' : 's'}`);
+                  }}
+                >
+                  Save Changes
+                </Button>
+              )}
             </>
           )}
         </div>
