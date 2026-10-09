@@ -2,6 +2,7 @@ import { useState, useRef, useEffect } from 'react';
 import Badge from '../Badge';
 import Button from '../Button';
 import Input from '../Input';
+import Select from '../Select';
 import SidePanel from '../SidePanel';
 import ConfirmDialog from '../ConfirmDialog';
 import { showToast } from '../../lib/toast';
@@ -164,8 +165,6 @@ export default function RegionsView({ year, onEditPlanogram, regions, setRegions
     ),
   ];
 
-  const selectedBase = baseOptions.find((o) => o.value === form.baseDoorSetId);
-
   function updateDoorSet(regionName, dsId, updater) {
     setRegions((prev) => prev.map((r) =>
       r.name !== regionName ? r : {
@@ -303,10 +302,17 @@ export default function RegionsView({ year, onEditPlanogram, regions, setRegions
   const totalRegions = regions.length;
   const totalDoorSets = allDoorSets.length;
 
+  const plusIcon = (
+                <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+                  <path d="M12.25 7C12.25 7.13261 12.1973 7.25979 12.1036 7.35355C12.0098 7.44732 11.8826 7.5 11.75 7.5H7.5V11.75C7.5 11.8826 7.44732 12.0098 7.35355 12.1036C7.25979 12.1973 7.13261 12.25 7 12.25C6.86739 12.25 6.74021 12.1973 6.64645 12.1036C6.55268 12.0098 6.5 11.8826 6.5 11.75V7.5H2.25C2.11739 7.5 1.99021 7.44732 1.89645 7.35355C1.80268 7.25979 1.75 7.13261 1.75 7C1.75 6.86739 1.80268 6.74021 1.89645 6.64645C1.99021 6.55268 2.11739 6.5 2.25 6.5H6.5V2.25C6.5 2.11739 6.55268 1.99021 6.64645 1.89645C6.74021 1.80268 6.86739 1.75 7 1.75C7.13261 1.75 7.25979 1.80268 7.35355 1.89645C7.44732 1.99021 7.5 2.11739 7.5 2.25V6.5H11.75C11.8826 6.5 12.0098 6.55268 12.1036 6.64645C12.1973 6.74021 12.25 6.86739 12.25 7Z" fill="white"/>
+                </svg>
+  );
+  const isRegionEmpty = currentRegionDoorSets.length === 0;
+
   return (
     <div className="flex flex-col h-full">
       {/* Header */}
-      <div className="flex items-center justify-between h-[56px] shrink-0 -mx-5 -mt-5 px-6 border-b border-gray-200">
+      <div className="flex items-center justify-between h-[56px] shrink-0 -mx-5 -mt-5 px-4 lg:px-6 border-b border-gray-200">
         <h1 className="text-base font-semibold text-gray-950">{year || 2026}</h1>
         <Button
           type="Outline"
@@ -355,7 +361,7 @@ export default function RegionsView({ year, onEditPlanogram, regions, setRegions
       {/* Two-panel layout */}
       <div className="flex gap-0 flex-1">
         {/* Region sidebar */}
-        <div className="w-[200px] shrink-0 pr-4 border-r border-gray-200 self-stretch">
+        <div className="w-[140px] lg:w-[200px] shrink-0 pr-3 lg:pr-4 border-r border-gray-200 self-stretch">
           <div className="flex flex-col">
             {regions.map((region) => (
               <button
@@ -363,7 +369,7 @@ export default function RegionsView({ year, onEditPlanogram, regions, setRegions
                 onClick={() => setActiveRegion(region.name)}
                 className={`text-left px-3 py-2.5 text-sm font-medium rounded-lg cursor-pointer border-none bg-transparent font-[inherit] transition-colors ${
                   region.name === activeRegion
-                    ? 'text-primary-blue-500 bg-primary-blue-50'
+                    ? 'text-primary-blue-600 bg-primary-blue-50'
                     : 'text-gray-600 hover:bg-gray-50'
                 }`}
               >
@@ -374,7 +380,22 @@ export default function RegionsView({ year, onEditPlanogram, regions, setRegions
         </div>
 
         {/* Door set cards grid */}
-        <div className="flex-1 pl-5">
+        <div className="flex-1 min-w-0 pl-4 lg:pl-5">
+          {isRegionEmpty ? (
+            <div className="flex flex-col items-center justify-center text-center gap-2 py-24">
+              <div className="w-12 h-12 rounded-xl bg-primary-blue-50 flex items-center justify-center mb-2">
+                <img src="/assets/GridFour.svg" alt="" className="w-6 h-6" />
+              </div>
+              <h2 className="text-base font-semibold text-gray-950">No doors yet</h2>
+              <p className="text-sm text-gray-500 max-w-[320px] mb-3">
+                {currentRegion?.name} doesn't have any doors for {currentYear}. Create a new door to get started.
+              </p>
+              <Button type="Default" size="sm" onClick={openCreate} leadingIcon={plusIcon}>
+                New Door
+              </Button>
+            </div>
+          ) : (
+          <>
           <div className="flex justify-end mb-4 min-h-8">
             <Button
               type="Default"
@@ -382,16 +403,12 @@ export default function RegionsView({ year, onEditPlanogram, regions, setRegions
               state={isRegionFull ? 'Disabled' : 'Default'}
               onClick={() => { if (!isRegionFull) openCreate(); }}
               title={isRegionFull ? 'All door sets (6–12) already exist in this region' : undefined}
-              leadingIcon={
-                <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
-                  <path d="M12.25 7C12.25 7.13261 12.1973 7.25979 12.1036 7.35355C12.0098 7.44732 11.8826 7.5 11.75 7.5H7.5V11.75C7.5 11.8826 7.44732 12.0098 7.35355 12.1036C7.25979 12.1973 7.13261 12.25 7 12.25C6.86739 12.25 6.74021 12.1973 6.64645 12.1036C6.55268 12.0098 6.5 11.8826 6.5 11.75V7.5H2.25C2.11739 7.5 1.99021 7.44732 1.89645 7.35355C1.80268 7.25979 1.75 7.13261 1.75 7C1.75 6.86739 1.80268 6.74021 1.89645 6.64645C1.99021 6.55268 2.11739 6.5 2.25 6.5H6.5V2.25C6.5 2.11739 6.55268 1.99021 6.64645 1.89645C6.74021 1.80268 6.86739 1.75 7 1.75C7.13261 1.75 7.25979 1.80268 7.35355 1.89645C7.44732 1.99021 7.5 2.11739 7.5 2.25V6.5H11.75C11.8826 6.5 12.0098 6.55268 12.1036 6.64645C12.1973 6.74021 12.25 6.86739 12.25 7Z" fill="white"/>
-                </svg>
-              }
+              leadingIcon={plusIcon}
             >
               New Door
             </Button>
           </div>
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
             {currentRegionDoorSets.map((ds, i) => {
               const label = ds.title || `${ds.doors} Doors`;
               const menuItems = [
@@ -430,6 +447,8 @@ export default function RegionsView({ year, onEditPlanogram, regions, setRegions
               );
             })}
           </div>
+          </>
+          )}
         </div>
       </div>
 
@@ -456,27 +475,11 @@ export default function RegionsView({ year, onEditPlanogram, regions, setRegions
           {panelMode === 'create' && (
             <div className="flex flex-col gap-2">
               <label className="text-sm font-medium leading-5 text-gray-700">Start from</label>
-              <div className="relative">
-                <select
-                  value={form.baseDoorSetId}
-                  onChange={(e) => setForm((f) => ({ ...f, baseDoorSetId: e.target.value }))}
-                  className="w-full h-10 px-3 pr-9 bg-white border border-gray-200 rounded-lg shadow-[0px_1px_2px_0px_rgba(0,0,0,0.05)] text-sm font-medium text-gray-900 outline-none focus:border-primary-blue-500 focus:ring-2 focus:ring-primary-blue-150 cursor-pointer appearance-none font-[inherit]"
-                >
-                  {baseOptions.map((opt) => (
-                    <option key={opt.value} value={opt.value}>{opt.label}</option>
-                  ))}
-                </select>
-                <svg width="10" height="6" viewBox="0 0 10 6" fill="none" className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none">
-                  <path d="M1 1L5 5L9 1" stroke="#667085" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-                </svg>
-              </div>
-              <p className="text-[11px] text-gray-500 leading-tight">
-                {form.baseDoorSetId === 'empty'
-                  ? 'Builds an empty planogram with the dimensions you choose below.'
-                  : selectedBase
-                  ? `Copies the layout from ${selectedBase.label} (${selectedBase.doors}×${selectedBase.defaultShelf}). Glides outside the new dimensions are dropped, extra doors/shelves stay empty.`
-                  : ''}
-              </p>
+              <Select
+                value={form.baseDoorSetId}
+                onChange={(v) => setForm((f) => ({ ...f, baseDoorSetId: v }))}
+                options={baseOptions}
+              />
             </div>
           )}
           <div className="grid grid-cols-2 gap-4">
@@ -488,7 +491,6 @@ export default function RegionsView({ year, onEditPlanogram, regions, setRegions
               max={12}
               value={form.doors}
               onChange={(v) => { setForm((f) => ({ ...f, doors: v })); if (errors.doors) setErrors((e) => ({ ...e, doors: undefined })); }}
-              helperText="Between 6 and 12 (unique per region)"
               error={errors.doors}
             />
             <Input
@@ -499,7 +501,6 @@ export default function RegionsView({ year, onEditPlanogram, regions, setRegions
               max={12}
               value={form.shelves}
               onChange={(v) => { setForm((f) => ({ ...f, shelves: v })); if (errors.shelves) setErrors((e) => ({ ...e, shelves: undefined })); }}
-              helperText="Between 1 and 12"
               error={errors.shelves}
             />
           </div>

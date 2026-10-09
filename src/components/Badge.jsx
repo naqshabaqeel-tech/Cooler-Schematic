@@ -2,9 +2,9 @@ const stateStyles = {
   Default: 'bg-[#F2F4F7] text-[#0C111D]',
   Hover: 'bg-[#EAECF0] text-[#0C111D]',
   Active: 'bg-[#EEF9F0] border border-[#CEEBD3] text-[#067647]',
-  Inactive: 'bg-[#FFFAEB] border border-[#F2E3BB] text-[#DC6803]',
+  Inactive: 'bg-[#FFFAEB] border border-[#F2E3BB] text-[#B54708]',
   Category: 'bg-[#E9F0FD] border border-[#D4E2FC] text-[#174190]',
-  Error: 'bg-[#FEF3F2] border border-[#FEE4E2] text-[#D92D20]',
+  Error: 'bg-[#FEF3F2] border border-[#FEE4E2] text-[#B42318]',
 };
 
 export default function Badge({ children, state = 'Default', leftIcon, rightIcon, className = '' }) {

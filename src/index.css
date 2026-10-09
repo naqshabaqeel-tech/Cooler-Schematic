@@ -1,6 +1,22 @@
 @import "tailwindcss";
 
 @theme {
+  /* Type scale — nothing below 14px. xs/sm are the working text sizes in the
+     app; they step up again on touch devices (see the coarse-pointer block). */
+  --text-xs: 0.875rem;
+  --text-xs--line-height: 1.25rem;
+  --text-sm: 0.9375rem;
+  --text-sm--line-height: 1.375rem;
+  --text-base: 1rem;
+  --text-base--line-height: 1.5rem;
+
+  /* Touch-target scale — used as h-control, min-h-control-sm, size-icon-btn,
+     gap-target. Desktop sizes here; they step up in the coarse-pointer block. */
+  --spacing-control: 2.5rem;      /* 40px — inputs, selects, primary buttons */
+  --spacing-control-sm: 2.25rem;  /* 36px — compact buttons, chips, tool buttons */
+  --spacing-icon-btn: 2.25rem;    /* 36px — icon-only buttons */
+  --spacing-target-gap: 0.5rem;   /* 8px  — minimum space between adjacent targets */
+
   --font-sans: 'Inter', -apple-system, 'SF Pro Display', 'Segoe UI', sans-serif;
 
   --color-background: #FCFCFC;
@@ -12,7 +28,7 @@
 
   --color-text-primary: #000000;
   --color-text-secondary: #555555;
-  --color-text-tertiary: #999999;
+  --color-text-tertiary: #667085;  /* was #999 (2.9:1) — now AA (5:1) */
   --color-text-info: #266DF0;
   --color-text-success: #166534;
   --color-text-warning: #854d0e;
@@ -21,6 +37,7 @@
   --color-gray-900: #101828;
   --color-gray-600: #475467;
   --color-gray-500: #667085;
+  --color-gray-400: #667085;  /* default gray-400 (2.6:1) fails AA as text; same value as gray-500 */
   --color-gray-200: #EAECF0;
   --color-gray-100: #F2F4F7;
   --color-gray-50: #F9FAFB;
@@ -35,4 +52,34 @@
   --color-border-tertiary: rgba(0,0,0,0.10);
   --color-border-secondary: rgba(0,0,0,0.18);
   --color-border-info: #93c5fd;
+}
+
+/* Touch devices: 16px minimum working text. */
+@media (pointer: coarse) {
+  :root {
+    --text-xs: 1rem;
+    --text-xs--line-height: 1.5rem;
+    --text-sm: 1rem;
+    --text-sm--line-height: 1.5rem;
+    --text-base: 1.0625rem;
+    --text-base--line-height: 1.625rem;
+    --text-lg: 1.25rem;
+    --text-lg--line-height: 1.75rem;
+
+    --spacing-control: 3rem;        /* 48px */
+    --spacing-control-sm: 2.75rem;  /* 44px */
+    --spacing-icon-btn: 2.75rem;    /* 44px */
+  }
+}
+
+/* Visible keyboard / switch-control focus for every interactive element.
+   Fields that draw their own focus ring (Input, search boxes) opt out via
+   :focus-within on the wrapper, so skip them here. */
+:where(button, a, summary, select, [role="button"], [role="tab"], [tabindex]):focus-visible {
+  outline: 3px solid var(--color-primary-blue-500);
+  outline-offset: 2px;
+  border-radius: 6px;
+}
+:where(input, textarea):focus-visible {
+  outline: none;
 }

@@ -24,9 +24,9 @@ const STEPS = [
   {
     id: 'welcome',
     placement: 'center',
-    title: 'Welcome — let’s build your first planogram',
+    title: 'Welcome — let’s build your planogram',
     body:
-      'In under two minutes we’ll walk through the Product Library, every tool in the toolbar, switching between doors, and how to save your work. Press → / ← to move between steps, or Esc to skip.',
+      'In a minute we’ll show you the product library, the canvas, the selected-product panel and how to save. Press → / ← to move between steps, or Esc to skip.',
     primary: 'Start tour',
   },
   {
@@ -35,102 +35,46 @@ const STEPS = [
     placement: 'right',
     title: 'Product Library — pick or drag',
     body:
-      'All products live in the left panel. Filter by category, size, or vendor, or use search. Two ways to place: (1) click a product to select it and the Add tool arms automatically; (2) drag a product row straight onto any shelf — the drop zone turns blue when it fits, red when it doesn’t.',
-  },
-  {
-    id: 'tool-add',
-    selector: '[data-tour-tool="add"]',
-    placement: 'down',
-    title: 'Add Product tool',
-    body:
-      'With a product picked, click any empty spot on a shelf to place one facing. Click an existing facing to insert the new one BEFORE it. For slim cans, use the toggle in the product card to stack pairs vs single facings.',
+      'All products live here, with Custom facing at the top for space the store decides. Search or filter, then either click a product and click a shelf, or drag it onto a shelf — the slot turns blue when it fits and red when it doesn’t.',
   },
   {
     id: 'canvas',
     selector: '[data-tour="canvas"]',
     placement: 'left',
-    title: 'Place your first facing',
+    title: 'The canvas — all doors side by side',
     body:
-      'Each row inside a door is a shelf, fixed at 30″ wide. The remaining inches show at the right edge so you always know how much room is left. Try clicking (or dropping onto) a shelf now.',
+      'Every door sits in one scrollable canvas. Scroll sideways to move between doors and use the zoom controls to focus on one. The number under each shelf shows the inches left. Click a shelf, or a facing, to place your selected product there.',
   },
   {
-    id: 'view-doors',
-    selector: '[data-tour="view-doors"]',
-    placement: 'right',
-    title: 'Switch between doors',
-    body:
-      'Use the View Doors panel to focus a single door (D1, D2, D3…) for detailed editing, or All Doors to see the full cooler. When a single door is focused, arrows above the canvas step left/right between doors. Edits in one door are independent of the others — but Move and Duplicate work across doors when All Doors is showing.',
-  },
-  {
-    id: 'tool-select',
-    selector: '[data-tour-tool="select"]',
-    placement: 'down',
-    title: 'Select tool — multi-pick facings',
-    body:
-      'Switch to Select, then click any number of facings. A bulk-action bar pops up at the bottom — use it to remove all selected facings at once, or replace them with the currently picked product.',
-  },
-  {
-    id: 'tool-move',
-    selector: '[data-tour-tool="move"]',
-    placement: 'down',
-    title: 'Move tool — drag to reorder',
-    body:
-      'In Move mode, drag any facing to a new position on the same shelf, drop it onto another shelf, or even another door (in the All Doors view). Drop on an existing facing to insert before it; drop on the empty trailing zone to append.',
-  },
-  {
-    id: 'tool-copy',
-    selector: '[data-tour-tool="copy"]',
-    placement: 'down',
-    title: 'Duplicate tool — two flows',
-    body:
-      'Single facing: click a placed facing → it’s in the clipboard → click any destination to insert a copy. Whole shelf: click the small copy-icon at the right edge of any shelf row → click another shelf to mirror its contents. A pill at the top of the canvas confirms what’s on the clipboard.',
-  },
-  {
-    id: 'tool-custom',
-    selector: '[data-tour-tool="custom"]',
-    placement: 'down',
-    title: 'Custom Area — reserve space',
-    body:
-      'Some real estate is for the store to decide — impulse racks, promo displays. The Custom tool reserves 2.5″ per click (right-click the empty zone to fill all remaining). Click the “+” inside a custom block to add a short description like “Promo Display”.',
-  },
-  {
-    id: 'tool-remove',
-    selector: '[data-tour-tool="remove"]',
-    placement: 'down',
-    title: 'Remove tool — clear what you don’t want',
-    body:
-      'Click any facing to delete it. To delete an entire shelf, hover the shelf number on the left edge — the number turns into a small × that works in every tool.',
-  },
-  {
-    id: 'right-click',
-    selector: '[data-tour="canvas"]',
+    id: 'selected',
+    selector: '[data-tour="selected-panel"]',
     placement: 'left',
-    title: 'Power shortcut — right-click anything',
+    title: 'Selected product — fine-tune it',
     body:
-      'Every placed facing has a context menu. Right-click it to access Select, Add, Custom, Move, Duplicate and Remove without switching tools first. Great once you have the basics down.',
+      'Whatever you select shows up here. Use the facings stepper to add or remove facings, Fill Shelf to use up the rest of the shelf, and Remove Block to take it off. Select a placed product and click another slot to insert it there too.',
   },
   {
-    id: 'undo-redo',
-    selector: '[data-tour="undo-redo"]',
+    id: 'toolbar',
+    selector: '[data-tour="toolbar"]',
     placement: 'down',
-    title: 'Undo / Redo / Zoom',
+    title: 'Undo, redo and zoom',
     body:
-      'Every edit is on the undo stack — slip up and just ⌘Z (or hit Undo). Use the zoom controls to step up to 200% for fine-grained work, or back to 50% for a full-cooler overview.',
+      'Every edit is on the undo stack — slip up and just ⌘Z (or hit Undo). Zoom out for the whole cooler, or in for detail. The ? button replays this tour.',
   },
   {
     id: 'save',
     selector: '[data-tour="header-cta"]',
     placement: 'down',
-    title: 'Save your work',
+    title: 'Save, export or publish',
     body:
-      'When the layout looks right, hit Save Changes (or Publish / Save Draft, depending on context). Your edits are scoped to this door set, so navigating away and back keeps everything intact.',
+      'Use Save As to keep a draft or export a PDF of one door or all doors, and Publish when it’s ready. Cancel discards your changes. You can change the status from the badge next to the title.',
   },
   {
     id: 'done',
     placement: 'center',
     title: 'You’re ready',
     body:
-      'Pick a product, click a shelf, build out your first door. You can always replay this tour from your local browser data — clear the “cooler-schematic-tour-v1” flag if you want to see it again.',
+      'Pick a product, click a shelf, and build out your first door. Press the ? button any time to see this tour again.',
     primary: 'Finish',
   },
 ];
@@ -263,7 +207,7 @@ export default function PlanogramTour({ onClose }) {
       >
         <div className="flex items-start justify-between gap-3">
           <div className="flex flex-col gap-1 min-w-0">
-            <span className="text-[11px] font-semibold text-white/60 tracking-wide">
+            <span className="text-xs font-semibold text-white/60 tracking-wide">
               Step {stepIdx + 1} of {STEPS.length}
             </span>
             <h3 className="text-sm font-semibold text-white leading-tight">{step.title}</h3>

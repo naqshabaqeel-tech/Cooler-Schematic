@@ -6,7 +6,7 @@ const variants = {
 
 export default function StatusBadge({ label, variant = 'active' }) {
   return (
-    <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium ${variants[variant]}`}>
+    <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${variants[variant]}`}>
       {label}
     </span>
   );

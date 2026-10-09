@@ -2,11 +2,11 @@ import Breadcrumb from './Breadcrumb';
 
 export default function TopBar({ icon, breadcrumbs = [] }) {
   return (
-    <header className="flex items-center justify-between h-[50px] px-6 py-3.5 border-b border-gray-100 bg-background-primary">
-      <Breadcrumb icon={icon} items={breadcrumbs} />
+    <header className="flex items-center justify-between h-[50px] px-4 lg:px-6 py-3.5 gap-3 border-b border-gray-100 bg-background-primary">
+      <div className="min-w-0 flex-1 overflow-hidden"><Breadcrumb icon={icon} items={breadcrumbs} /></div>
 
       {/* Actions */}
-      <div className="flex items-center gap-4">
+      <div className="flex items-center gap-2 lg:gap-4 shrink-0">
         <button className="flex items-center gap-2 px-2.5 py-1.5 rounded-lg border-none bg-background-primary text-sm font-semibold text-gray-600 cursor-pointer font-[inherit] hover:bg-gray-100">
           <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
             <circle cx="8" cy="8" r="6.5" stroke="currentColor" strokeWidth="1.2"/>

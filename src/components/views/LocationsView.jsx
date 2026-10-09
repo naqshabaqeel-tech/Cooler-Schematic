@@ -9,7 +9,7 @@ function StatusPill({ status }) {
       ? 'bg-gray-50 text-gray-600 border-gray-200'
       : 'bg-amber-50 text-amber-700 border-amber-200';
   return (
-    <span className={`inline-flex items-center px-2 py-0.5 rounded-md border text-[11px] font-medium ${tone}`}>
+    <span className={`inline-flex items-center px-2 py-0.5 rounded-md border text-xs font-medium ${tone}`}>
       {status}
     </span>
   );
@@ -36,12 +36,12 @@ export default function LocationsView({ onSelectLocation }) {
   return (
     <div className="flex flex-col h-full">
       {/* Page header */}
-      <div className="flex items-center justify-between mb-4">
+      <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
         <div>
           <h1 className="text-lg font-semibold text-gray-950">Locations</h1>
           <p className="text-xs text-gray-500 mt-0.5">{locations.length} total — select a location to view details.</p>
         </div>
-        <div className="flex items-center gap-1.5 h-8 px-2 rounded-md border border-gray-200 bg-white w-[280px]">
+        <div className="flex items-center gap-1.5 h-8 px-2 rounded-md border border-gray-200 bg-white w-full sm:w-[280px]">
           <img src="/assets/MagnifyingGlass.svg" alt="" className="w-4 h-4 shrink-0 opacity-60" />
           <input
             type="text"
@@ -55,7 +55,7 @@ export default function LocationsView({ onSelectLocation }) {
 
       {/* Table */}
       <div className="flex-1 overflow-y-auto bg-white border border-gray-200 rounded-lg">
-        <table className="w-full text-xs">
+        <div className="overflow-x-auto"><table className="w-full text-xs min-w-[640px]">
           <thead className="bg-gray-50 border-b border-gray-200 sticky top-0">
             <tr className="text-left text-gray-500 font-medium">
               <th className="px-4 py-2.5">ID</th>
@@ -89,7 +89,7 @@ export default function LocationsView({ onSelectLocation }) {
               </tr>
             )}
           </tbody>
-        </table>
+        </table></div>
       </div>
     </div>
   );

@@ -1,13 +1,13 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { mainNavItems, toolsSubItems } from '../data/navigation';
 
 function NavItem({ icon, label, active = false, sub = false, collapsed = false, onClick }) {
   const base = sub
-    ? `flex items-center gap-2.5 h-9 rounded-lg cursor-pointer no-underline ${collapsed ? 'justify-center px-0' : 'pl-5 pr-2.5'} text-xs font-medium`
-    : `flex items-center gap-2.5 h-9 rounded-lg cursor-pointer no-underline ${collapsed ? 'justify-center px-0' : 'px-2.5'} text-sm font-medium`;
+    ? `flex items-center gap-2.5 min-h-9 py-1.5 leading-tight rounded-lg cursor-pointer no-underline ${collapsed ? 'justify-center px-0' : 'pl-5 pr-2.5'} text-xs font-medium`
+    : `flex items-center gap-2.5 min-h-9 py-1.5 leading-tight rounded-lg cursor-pointer no-underline ${collapsed ? 'justify-center px-0' : 'px-2.5'} text-sm font-medium`;
 
   const state = active
-    ? 'bg-primary-blue-50 text-primary-blue-500'
+    ? 'bg-primary-blue-50 text-primary-blue-600'
     : 'text-text-primary hover:bg-gray-100';
 
   const iconSize = sub ? 'w-4 h-4 shrink-0' : 'w-[18px] h-[18px] shrink-0';
@@ -32,9 +32,18 @@ function CollapseIcon({ collapsed }) {
   );
 }
 
-export default function Sidebar({ activeRoute, onNavigate }) {
+export default function Sidebar({ activeRoute, onNavigate, compact = false }) {
   const [toolsOpen, setToolsOpen] = useState(true);
-  const [collapsed, setCollapsed] = useState(false);
+  // Auto-collapse to the icon rail on tablet widths; the user can still toggle.
+  const [collapsedState, setCollapsed] = useState(() => typeof window !== 'undefined' && window.innerWidth < 1100);
+  // `compact` (the planogram editor) forces the icon rail to give the canvas the room.
+  const collapsed = compact || collapsedState;
+  useEffect(() => {
+    const mq = window.matchMedia('(max-width: 1099px)');
+    const onChange = (e) => setCollapsed(e.matches);
+    mq.addEventListener('change', onChange);
+    return () => mq.removeEventListener('change', onChange);
+  }, []);
 
   // Map main-nav labels to the routes the App.jsx state machine understands.
   // Only Locations and the Tools → Cooler Schematic items are wired today;
@@ -50,7 +59,7 @@ export default function Sidebar({ activeRoute, onNavigate }) {
 
   return (
     <aside
-      className={`${collapsed ? 'w-[56px] min-w-[56px]' : 'w-[200px] min-w-[200px]'} flex flex-col gap-[30px] bg-background py-5 ${collapsed ? 'px-2' : 'pl-3 pr-2'} overflow-y-auto transition-all duration-200`}
+      className={`shrink-0 ${collapsed ? 'w-[56px] min-w-[56px]' : 'w-[200px] min-w-[200px]'} flex flex-col gap-[30px] bg-background py-5 ${collapsed ? 'px-2' : 'pl-3 pr-2'} overflow-y-auto transition-all duration-200`}
     >
       {/* Logo + Collapse toggle */}
       <div className={`flex items-center ${collapsed ? 'justify-center' : 'justify-between pl-2.5'}`}>
@@ -59,13 +68,13 @@ export default function Sidebar({ activeRoute, onNavigate }) {
             <img src="/assets/Logo.svg" alt="PBD" className="h-7 w-auto" />
           </div>
         )}
-        <button
-          onClick={() => setCollapsed(!collapsed)}
+        {!compact && <button
+          onClick={() => setCollapsed(!collapsedState)}
           title={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
           className="flex items-center justify-center w-7 h-7 rounded-md hover:bg-gray-100 cursor-pointer bg-transparent border-none shrink-0"
         >
           <CollapseIcon collapsed={collapsed} />
-        </button>
+        </button>}
       </div>
 
       {/* Navigation */}

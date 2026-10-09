@@ -143,7 +143,7 @@ export default function LocationDetailView({ location, onBack, layout, onLayoutC
   return (
     <div className="flex flex-col h-full">
       {/* Header row ‒ 50px */}
-      <div className="flex items-center justify-between h-[50px] px-6 py-2 border-b border-gray-200 bg-white shrink-0">
+      <div className="flex items-center justify-between h-[50px] px-4 lg:px-6 py-2 border-b border-gray-200 bg-white shrink-0">
         <div className="flex items-center gap-4 min-w-0">
           <h1 className="text-base font-semibold text-black truncate">
             {location.id} - {location.name}
@@ -179,7 +179,7 @@ export default function LocationDetailView({ location, onBack, layout, onLayoutC
       </div>
 
       {/* Info bar ‒ 40px, light gray */}
-      <div className="flex items-center h-10 px-6 bg-[#F9FAFB] border-b border-gray-200 shrink-0">
+      <div className="flex items-center h-10 px-4 lg:px-6 bg-[#F9FAFB] border-b border-gray-200 shrink-0">
         <div className="flex items-center gap-3 text-xs font-medium text-[#475467]">
           <div className="flex items-center gap-1 py-1">
             <MapPinIcon />
@@ -204,7 +204,7 @@ export default function LocationDetailView({ location, onBack, layout, onLayoutC
       </div>
 
       {/* Tabs ‒ 48px, horizontally scrollable to absorb the 12-item strip */}
-      <div className="flex items-end h-12 px-6 border-b border-gray-200 bg-white overflow-x-auto shrink-0">
+      <div className="flex items-end h-12 px-4 lg:px-6 border-b border-gray-200 bg-white overflow-x-auto shrink-0">
         <div className="flex items-center gap-[10px]">
           {LOCATION_DETAIL_TABS.map((tab) => {
             const isActive = tab === activeTab;
@@ -255,7 +255,7 @@ export default function LocationDetailView({ location, onBack, layout, onLayoutC
       </div>
 
       {activeTab !== 'Cooler Schematic' && (
-        <div className="flex-1 overflow-y-auto p-6 bg-[#F9FAFB]">
+        <div className="flex-1 overflow-y-auto p-4 lg:p-6 bg-[#F9FAFB]">
           {activeTab === 'Details' ? (
             <div className="flex flex-col items-center justify-center h-full text-center text-gray-400">
               <p className="text-sm font-medium">Already developed</p>

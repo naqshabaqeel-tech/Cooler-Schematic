@@ -130,6 +130,18 @@ export default function App() {
     doGoYear(year);
   }
 
+  // Status is editable from the planogram header; keep the region list and the
+  // open planogram in sync.
+  function setPlanogramStatus(status) {
+    const id = planogramInfo.doorSet?._id;
+    if (!id) return;
+    setRegions((prev) => prev.map((r) => ({
+      ...r,
+      doorSets: r.doorSets.map((ds) => (ds._id === id ? { ...ds, status } : ds)),
+    })));
+    setPlanogramInfo((p) => ({ ...p, doorSet: { ...p.doorSet, status } }));
+  }
+
   function goPlanogram(doorSet, regionName, initialLayout) {
     setPlanogramInfo({ doorSet, regionName });
     // Seed the door set's layout the first time it's opened. Re-opens keep
@@ -198,11 +210,11 @@ export default function App() {
 
   return (
     <div className="flex w-full h-screen bg-background overflow-hidden">
-      <Sidebar activeRoute={view} onNavigate={navigateTo} />
+      <Sidebar activeRoute={view} onNavigate={navigateTo} compact={view === 'planogram'} />
 
       <main className="flex-1 flex flex-col min-w-0 min-h-0 p-2">
         <div className="flex-1 flex flex-col bg-background-primary border border-grey-200 rounded-lg overflow-hidden">
-          <TopBar icon={topIcon} breadcrumbs={breadcrumbs} />
+          {view !== 'planogram' && <TopBar icon={topIcon} breadcrumbs={breadcrumbs} />}
           {view === 'years' && (
             <SubNav
               showArchived={showArchivedYears}
@@ -238,6 +250,8 @@ export default function App() {
                 doorSet={planogramInfo.doorSet}
                 regionName={planogramInfo.regionName}
                 onExit={doGoYear.bind(null, currentYear || 2026)}
+                onBack={() => setPendingNav({ run: () => doGoYear(currentYear || 2026) })}
+                onStatusChange={setPlanogramStatus}
                 layout={planogramInfo.doorSet?._id ? doorSetLayouts[planogramInfo.doorSet._id] : undefined}
                 onLayoutChange={(updater) => planogramInfo.doorSet?._id && setDoorSetLayout(planogramInfo.doorSet._id, updater)}
               />

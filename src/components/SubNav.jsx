@@ -2,9 +2,9 @@ import Button from './Button';
 
 export default function SubNav({ showArchived, onToggleArchived, onNewSchematic }) {
   return (
-    <div className="flex items-center justify-between h-14 px-6 border-b border-[#F1F5F9] bg-white">
+    <div className="flex items-center justify-between min-h-14 px-4 lg:px-6 gap-3 border-b border-[#F1F5F9] bg-white">
       {/* Search */}
-      <div className="flex items-center gap-1 h-8 px-2 rounded-lg border border-[#EAECF0] bg-white w-[249px]">
+      <div className="flex items-center gap-1 h-8 px-2 rounded-lg border border-[#EAECF0] bg-white w-full max-w-[249px] min-w-0">
         <img src="/assets/MagnifyingGlass.svg" alt="" className="w-4 h-4 shrink-0" />
         <input
           type="text"
@@ -14,7 +14,7 @@ export default function SubNav({ showArchived, onToggleArchived, onNewSchematic 
       </div>
 
       {/* Actions */}
-      <div className="flex items-center gap-2">
+      <div className="flex items-center gap-2 shrink-0">
         {!showArchived && (
           <Button
             type="Outline"

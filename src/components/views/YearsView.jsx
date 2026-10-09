@@ -1,7 +1,9 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useLayoutEffect } from 'react';
+import { createPortal } from 'react-dom';
 import Badge from '../Badge';
 import Button from '../Button';
 import Input from '../Input';
+import Select from '../Select';
 import SidePanel from '../SidePanel';
 import ConfirmDialog from '../ConfirmDialog';
 import { yearCards } from '../../data/navigation';
@@ -66,14 +68,37 @@ function pad(n) {
 function RegionsMultiSelect({ regions, selected, onChange }) {
   const [open, setOpen] = useState(false);
   const ref = useRef(null);
+  const listRef = useRef(null);
+  const btnRef = useRef(null);
+  const [pos, setPos] = useState(null);
+
+  // Bring the opened list fully into view inside the side panel so touch users
+  // can reach it without first scrolling the panel behind it.
+  // The list is portaled to <body> with fixed positioning so the side panel's
+  // own scroll container can't clip it or steal touch scrolling from it.
+  useLayoutEffect(() => {
+    if (!open) return;
+    function place() {
+      const r = btnRef.current?.getBoundingClientRect();
+      if (!r) return;
+      const below = window.innerHeight - r.bottom - 12;
+      const above = r.top - 12;
+      const flip = below < 160 && above > below;
+      const maxHeight = Math.min(260, Math.max(120, flip ? above : below));
+      setPos({ left: r.left, width: r.width, maxHeight, ...(flip ? { bottom: window.innerHeight - r.top + 4 } : { top: r.bottom + 4 }) });
+    }
+    place();
+    window.addEventListener('resize', place);
+    return () => window.removeEventListener('resize', place);
+  }, [open]);
 
   useEffect(() => {
     if (!open) return;
     function handleClick(e) {
-      if (ref.current && !ref.current.contains(e.target)) setOpen(false);
+      if (ref.current && !ref.current.contains(e.target) && !listRef.current?.contains(e.target)) setOpen(false);
     }
-    document.addEventListener('mousedown', handleClick);
-    return () => document.removeEventListener('mousedown', handleClick);
+    document.addEventListener('pointerdown', handleClick);
+    return () => document.removeEventListener('pointerdown', handleClick);
   }, [open]);
 
   const allSelected = regions.length > 0 && selected.length === regions.length;
@@ -98,6 +123,7 @@ function RegionsMultiSelect({ regions, selected, onChange }) {
   return (
     <div className="relative" ref={ref}>
       <button
+        ref={btnRef}
         type="button"
         onClick={() => setOpen(!open)}
         className={`flex items-center justify-between gap-1.5 w-full h-10 px-3 bg-white border rounded-lg shadow-[0px_1px_2px_0px_rgba(0,0,0,0.05)] text-sm font-medium cursor-pointer hover:bg-gray-50 transition-colors font-[inherit] ${
@@ -109,8 +135,11 @@ function RegionsMultiSelect({ regions, selected, onChange }) {
           <path d="M1 1L5 5L9 1" stroke="#667085" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
         </svg>
       </button>
-      {open && (
-        <div className="absolute left-0 right-0 top-11 z-20 bg-white border border-gray-200 rounded-lg shadow-[0px_4px_12px_rgba(0,0,0,0.1)] py-1 max-h-64 overflow-y-auto">
+      {open && pos && createPortal(
+        <div
+          ref={listRef}
+          style={{ position: 'fixed', zIndex: 70, ...pos, touchAction: 'pan-y', WebkitOverflowScrolling: 'touch' }}
+          className="bg-white border border-gray-200 rounded-lg shadow-[0px_4px_12px_rgba(0,0,0,0.1)] py-1 overflow-y-auto overscroll-contain">
           <label className="flex items-center gap-2 px-3 py-2 text-sm font-semibold text-gray-900 hover:bg-gray-50 cursor-pointer border-b border-gray-100">
             <input
               type="checkbox"
@@ -138,7 +167,8 @@ function RegionsMultiSelect({ regions, selected, onChange }) {
               </label>
             );
           })}
-        </div>
+        </div>,
+        document.body
       )}
     </div>
   );
@@ -326,7 +356,7 @@ export default function YearsView({
           <p className="text-xs text-gray-500 mt-1">Archive a year from its three-dot menu to see it here.</p>
         </div>
       )}
-      <div className="grid grid-cols-3 gap-4">
+      <div className="grid grid-cols-2 min-[1440px]:grid-cols-3 gap-4">
         {visibleCards.map((card) => (
           <div
             key={card.year}
@@ -354,8 +384,8 @@ export default function YearsView({
 
             <div className="border-t border-gray-200" />
 
-            <div className="flex items-center justify-between">
-              <div className="flex gap-2">
+            <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2">
+              <div className="flex flex-wrap gap-2">
                 {card.statuses.map((s) => (
                   <Badge key={s.label} state={s.variant === 'active' ? 'Active' : s.variant === 'draft' ? 'Inactive' : 'Default'}>
                     {pad(s.count)} {s.label}
@@ -364,7 +394,7 @@ export default function YearsView({
               </div>
               <button
                 onClick={() => onSelectYear(card.year)}
-                className="flex items-center gap-1 text-xs font-medium text-primary-blue-600 cursor-pointer bg-transparent border-none font-[inherit] hover:underline"
+                className="flex items-center gap-1 whitespace-nowrap text-xs font-medium text-primary-blue-600 cursor-pointer bg-transparent border-none font-[inherit] hover:underline"
               >
                 View Detail
                 <CaretRight />
@@ -392,28 +422,14 @@ export default function YearsView({
               door set from that year is cloned into the new year. */}
           <div className="flex flex-col gap-2">
             <label className="text-sm font-medium leading-5 text-gray-700">Start from</label>
-            <div className="relative">
-              <select
-                value={newSchematicForm.baseYear}
-                onChange={(e) => handleBaseYearChange(e.target.value)}
-                className="w-full h-10 px-3 pr-9 bg-white border border-gray-200 rounded-lg shadow-[0px_1px_2px_0px_rgba(0,0,0,0.05)] text-sm font-medium text-gray-900 outline-none focus:border-primary-blue-500 focus:ring-2 focus:ring-primary-blue-150 cursor-pointer appearance-none font-[inherit]"
-              >
-                <option value="empty">Empty (start from scratch)</option>
-                {cards
-                  .filter((c) => !c.archived)
-                  .map((c) => (
-                    <option key={c.year} value={String(c.year)}>{c.year}</option>
-                  ))}
-              </select>
-              <svg width="10" height="6" viewBox="0 0 10 6" fill="none" className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none">
-                <path d="M1 1L5 5L9 1" stroke="#667085" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
-              </svg>
-            </div>
-            <p className="text-[11px] text-gray-500 leading-tight">
-              {newSchematicForm.baseYear === 'empty'
-                ? 'Creates a fresh schematic with no door sets — you build it region by region.'
-                : `All door sets from ${newSchematicForm.baseYear} (in the regions you keep selected below) will be cloned into the new year, planogram layouts included.`}
-            </p>
+            <Select
+              value={newSchematicForm.baseYear}
+              onChange={handleBaseYearChange}
+              options={[
+                { value: 'empty', label: 'Empty (start from scratch)' },
+                ...cards.filter((c) => !c.archived).map((c) => ({ value: String(c.year), label: String(c.year) })),
+              ]}
+            />
           </div>
 
           <Input
@@ -424,7 +440,6 @@ export default function YearsView({
             max={2100}
             value={newSchematicForm.year}
             onChange={(v) => { setNewSchematicForm((f) => ({ ...f, year: v })); if (newSchematicError) setNewSchematicError(''); }}
-            helperText="Next available year is pre-filled — change if needed"
             error={newSchematicError && newSchematicError.toLowerCase().includes('year') ? newSchematicError : undefined}
           />
 
@@ -437,11 +452,9 @@ export default function YearsView({
               selected={newSchematicForm.regions}
               onChange={(next) => { setNewSchematicForm((f) => ({ ...f, regions: next })); if (newSchematicError) setNewSchematicError(''); }}
             />
-            <p className={`text-sm font-medium leading-5 ${newSchematicError && newSchematicError.includes('region') ? 'text-[#D92D20]' : 'text-gray-500'}`}>
-              {newSchematicError && newSchematicError.includes('region')
-                ? newSchematicError
-                : 'Pick which regions this schematic covers. Door sets can be added per region after creation.'}
-            </p>
+            {newSchematicError && newSchematicError.includes('region') && (
+              <p className="text-sm font-medium leading-5 text-[#D92D20]">{newSchematicError}</p>
+            )}
           </div>
         </div>
       </SidePanel>
@@ -466,7 +479,6 @@ export default function YearsView({
             max={2100}
             value={editForm.year}
             onChange={(v) => { setEditForm((f) => ({ ...f, year: v })); if (editError) setEditError(''); }}
-            helperText="Calendar year for this set of regions"
             error={editError}
           />
           <Input
@@ -504,7 +516,6 @@ export default function YearsView({
             max={2100}
             value={duplicateYear}
             onChange={(v) => { setDuplicateYear(v); setDuplicateError(''); }}
-            helperText="Must be a year that doesn't already exist"
             error={duplicateError}
           />
         </div>
