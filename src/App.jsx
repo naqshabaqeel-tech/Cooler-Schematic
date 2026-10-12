@@ -210,7 +210,7 @@ export default function App() {
 
   return (
     <div className="flex w-full h-screen bg-background overflow-hidden">
-      <Sidebar activeRoute={view} onNavigate={navigateTo} compact={view === 'planogram'} />
+      <Sidebar activeRoute={view} onNavigate={navigateTo} />
 
       <main className="flex-1 flex flex-col min-w-0 min-h-0 p-2">
         <div className="flex-1 flex flex-col bg-background-primary border border-grey-200 rounded-lg overflow-hidden">

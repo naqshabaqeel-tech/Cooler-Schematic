@@ -32,12 +32,10 @@ function CollapseIcon({ collapsed }) {
   );
 }
 
-export default function Sidebar({ activeRoute, onNavigate, compact = false }) {
+export default function Sidebar({ activeRoute, onNavigate }) {
   const [toolsOpen, setToolsOpen] = useState(true);
   // Auto-collapse to the icon rail on tablet widths; the user can still toggle.
-  const [collapsedState, setCollapsed] = useState(() => typeof window !== 'undefined' && window.innerWidth < 1100);
-  // `compact` (the planogram editor) forces the icon rail to give the canvas the room.
-  const collapsed = compact || collapsedState;
+  const [collapsed, setCollapsed] = useState(() => typeof window !== 'undefined' && window.innerWidth < 1100);
   useEffect(() => {
     const mq = window.matchMedia('(max-width: 1099px)');
     const onChange = (e) => setCollapsed(e.matches);
@@ -68,13 +66,13 @@ export default function Sidebar({ activeRoute, onNavigate, compact = false }) {
             <img src="/assets/Logo.svg" alt="PBD" className="h-7 w-auto" />
           </div>
         )}
-        {!compact && <button
-          onClick={() => setCollapsed(!collapsedState)}
+        <button
+          onClick={() => setCollapsed(!collapsed)}
           title={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
           className="flex items-center justify-center w-7 h-7 rounded-md hover:bg-gray-100 cursor-pointer bg-transparent border-none shrink-0"
         >
           <CollapseIcon collapsed={collapsed} />
-        </button>}
+        </button>
       </div>
 
       {/* Navigation */}

@@ -1036,7 +1036,12 @@ export default function PlanogramView({
               style={{ backgroundImage: 'radial-gradient(#D0D5DD 1px, transparent 1px)', backgroundSize: '16px 16px', touchAction: 'pan-x pan-y' }}
               onClick={(e) => { if (!e.target.closest('[data-door-idx]')) { setSelection(null); } }}
             >
-              <div className="flex items-start gap-12 p-8 w-max min-w-full" style={{ zoom: zoom / 100 }}>
+              {/* Extra room below the doors so the canvas always scrolls up/down, and so
+                  doors can be scrolled clear of the tablet bottom sheet. */}
+              <div
+                className="flex items-start gap-12 p-8 pb-24 w-max min-w-full"
+                style={{ zoom: zoom / 100, paddingBottom: !isDesktop && info ? '55vh' : undefined }}
+              >
                 {layout.map((door, doorIdx) => (
                   <div key={door.id} data-door-idx={doorIdx} data-door-label={door.label} className="w-[400px] shrink-0">
                     <DoorColumn

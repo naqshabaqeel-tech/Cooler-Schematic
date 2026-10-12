@@ -14,7 +14,7 @@ function pad(n) {
 
 function DoorStrip({ total, active }) {
   return (
-    <div className="flex gap-1">
+    <div className="flex flex-wrap gap-1">
       {Array.from({ length: total }, (_, i) => (
         <div
           key={i}
@@ -105,7 +105,7 @@ function DoorSetCard({ ds, onEditPlanogram, menuItems }) {
   const labelMap = { active: 'Active', draft: 'Draft', archive: 'Archive' };
 
   return (
-    <div className="bg-white border border-gray-200 rounded-xl p-4 flex flex-col gap-3">
+    <div className="bg-white border border-gray-200 rounded-xl p-4 flex flex-col gap-3 min-w-0">
       <div className="flex items-start justify-between">
         <span className="text-lg font-semibold text-gray-950">{ds.doors} Doors</span>
         <CardDotsMenu items={menuItems} />
@@ -118,20 +118,20 @@ function DoorSetCard({ ds, onEditPlanogram, menuItems }) {
 
       <DoorStrip total={ds.doors} active={ds.activeDoors} />
 
-      <div className="flex items-center justify-between pt-2 border-t border-gray-200">
-        <div className="flex items-center gap-4">
-          <div className="flex items-center gap-1 text-xs text-gray-500">
+      <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2 pt-2 border-t border-gray-200">
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
+          <div className="flex items-center gap-1 text-xs text-gray-500 whitespace-nowrap">
             <LocationIcon />
             Location: <span className="font-medium text-gray-900">{ds.locations}</span>
           </div>
-          <div className="flex items-center gap-1 text-xs text-gray-500">
+          <div className="flex items-center gap-1 text-xs text-gray-500 whitespace-nowrap">
             <OverrideIcon />
             Overrides: <span className="font-medium text-gray-900">{ds.overrides}</span>
           </div>
         </div>
         <button
           onClick={() => onEditPlanogram?.(ds)}
-          className="flex items-center gap-1 text-xs font-medium text-primary-blue-600 cursor-pointer bg-transparent border-none font-[inherit] hover:underline"
+          className="flex items-center gap-1 whitespace-nowrap text-xs font-medium text-primary-blue-600 cursor-pointer bg-transparent border-none font-[inherit] hover:underline"
         >
           Edit Planogram
           <CaretRight />
@@ -408,7 +408,7 @@ export default function RegionsView({ year, onEditPlanogram, regions, setRegions
               New Door
             </Button>
           </div>
-          <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
+          <div className="grid grid-cols-2 gap-4">
             {currentRegionDoorSets.map((ds, i) => {
               const label = ds.title || `${ds.doors} Doors`;
               const menuItems = [
